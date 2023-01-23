@@ -1,0 +1,647 @@
+---
+title: "dev.size test"
+author: "James Thompson - 21011195"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+# Manually getting formula to help get hte width of the cells
+
+We can get the width of the cells with the figure dimensions, size of points and range.
+
+First of all we need to figure out how the .getVisiblePoints will be able to get the plotting window size.
+
+ggplot uses the grid package to manage it printing of object.
+
+I think that somewhere in here there might be the information I need.
+
+After having a bit more of a look it seems like grid package wont have the neccsary information but going to have a look at it source code now to see if it has any information
+
+However I have found package that is grDevices that has a dev.size funciton which seems to be what I want. I got hte idea form this by looking at the c code for the grid package insource code for R.
+
+```
+x = 1:1000
+y = 5
+plot = ggplot(NULL, aes(x, y)) + 
+  expand_limits(x=c(0,100)) + 
+  geom_point(size = 0.9)
+plot
+dev.size()
+```
+
+## Testing out dev.size
+This is a test to see how the figure sizes are effected but rmd commands
+
+We will start with a simple plot
+We dont really know what default size is but it sesm to be 7x5
+```{r}
+x = 1:1000
+y = 5
+plot = ggplot(NULL, aes(x, y)) + 
+  expand_limits(x=c(0,100)) + 
+  geom_point(size = 0.9)
+plot
+dev.size()
+```
+
+
+Now what if we specify the figure hieght and width
+
+```{r fig.dim=c(3,5)}
+x = 1:1000
+y = 5
+plot = ggplot(NULL, aes(x, y)) + 
+  expand_limits(x=c(0,100)) + 
+  geom_point(size = 0.9)
+plot
+dev.size()
+```
+
+This works!
+
+We know that we can now get the figure size what we need to know now is the actual plotting space.
+
+I think for now though to get an apporiximation it is alright to assume that the plotting space as a percent of the figure space will remain constant.
+
+## Getting the data
+We need to know how many points fit in with various plot sizes
+
+It seems to work! A little bit of code like this printing out ap lot seems to give the dimensions of where the plot was plotted.
+Here is the data frame that it will be collected in and some helper functions
+```{r}
+overplotting = data.frame(matrix(ncol = 3, nrow = 0))
+colnames(overplotting) = c("figDim", "number", "size")
+
+getGridDF <- function(N) {
+  seq = seq(1,100, length.out=N)
+  x= rep(seq, each=N)
+  y = rep(seq, N)
+  data.frame(x,y)
+}
+
+plotGraph <- function(N, size) {
+  df = getGridDF(N)
+  plot = ggplot(df, aes(x, y)) + 
+    geom_point(size=size)
+  return(plot)
+}
+```
+
+Starting with a base size
+
+### Smallest figure
+
+```{r fig.dim=c(1,1)}
+# Small points
+N = 16
+size = 0.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Default
+N = 10
+size = 1.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Small Points
+N = 5
+size = 3
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Medium
+N = 3
+size = 5.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Large
+N = 2
+size = 12
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+```
+
+### Small figure
+
+```{r fig.dim=c(3,3)}
+# Small points
+N = 72
+size = 0.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Default
+N = 40
+size = 1.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Small Points
+N = 23
+size = 3
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Medium
+N = 15
+size = 5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Large
+N = 11
+size = 7.3
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Extra Large points
+N = 8
+size = 10
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Super large
+N = 4
+size = 24.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Silly big for models
+N = 3
+size = 37
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+```
+
+### Small-Medium figure
+
+```{r fig.dim=c(4,4)}
+# Smallest points
+N = 110
+size = 0.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Default
+N = 62
+size = 1.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Small
+N = 35
+size = 3
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Medium Points
+N = 22
+size = 5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Large
+N = 16
+size = 7
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Extra large points
+N = 11
+size = 10
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Super large
+N = 7
+size = 17
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Silly big for models
+N = 3
+size = 52
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+```
+
+### Medium figure
+
+```{r fig.dim=c(6,6)}
+# Smallest points
+N = 170
+size = 0.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Default
+N = 90
+size = 1.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Small
+N = 50
+size = 3
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Medium Points
+N = 34
+size = 5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Large
+N = 22
+size = 7.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Extra large points
+N = 17
+size = 10
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Super large
+N = 10
+size = 18.2
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Silly big for models
+N = 4
+size = 56
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+```
+
+### Medium-Large figure
+
+```{r fig.dim=c(8,8)}
+# Smallest points
+N = 225
+size = 0.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Default
+N = 120
+size = 1.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Small
+N = 70
+size = 3
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Medium Points
+N = 43
+size = 5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Large
+N = 31
+size = 7.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Extra large points
+N = 23
+size = 10
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Super large
+N = 13
+size = 19
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Silly big for models
+N = 5
+size = 57
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+```
+
+### Large figure
+
+```{r fig.dim=c(10,10)}
+# Smallest points
+N = 300
+size = 0.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Default
+N = 175
+size = 1.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# small Points
+N = 91
+size = 3
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Medium
+N = 52
+size = 5.2
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Large
+N = 39
+size = 7.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+
+# Extra large points
+N = 29
+size = 10
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Super large
+N = 15
+size = 20.8
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Silly big for models
+N = 7
+size = 49
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+```
+
+### Largest figure
+
+```{r fig.dim=c(15,15)}
+# Smallest points
+N = 420
+size = 0.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Default
+N =260
+size = 1.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# small Points
+N = 139
+size = 3
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Medium
+N = 83
+size = 5.05
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Large
+N = 59
+size = 7.5
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+
+# Extra large points
+N = 45
+size = 10
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Super large
+N = 23
+size = 19.9
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+
+# Silly big for models
+N = 10
+size = 50
+plotGraph(N, size)
+overplotting[nrow(overplotting)+1,] <- c(dev.size()[1], N, size)
+```
+
+Now all we have to do is save the data
+
+```{r}
+save(overplotting, file = "overplotting.rData")
+```
+
+# Modeling
+
+Common predicitons will be done with this seq
+```{r}
+sizeSeq = seq(0.5,50,length.out=55)
+figDimSeq = seq(1,15, length.out=20)
+```
+
+Now that we have the data we can model it.
+
+First just having a quick look at the data
+
+```{r}
+figDim = ggplot(overplotting, aes(figDim, number)) +
+  geom_point(aes(colour = as.factor(size)))
+figDim
+
+size = ggplot(overplotting, aes(size, number)) +
+  geom_point(aes(colour=as.factor(figDim)))
+size
+```
+
+
+Here is a simple linear model but it doesnt have a particularly good job of modeling.
+```{r}
+m.figInterSize = lm(number ~ figDim * size - 1, data=overplotting)
+summary(m.figInterSize)
+plot(m.figInterSize)
+```
+
+## Predictions simple line
+
+```{r}
+plot(sizeSeq, predict(m.figInterSize, data.frame(size=sizeSeq, figDim= 1)),
+     ylim=c(-30,300))
+for (fig in 1:15) {
+  figConstant = predict(m.figInterSize, data.frame(size=sizeSeq, figDim= fig))
+  lines(sizeSeq, figConstant)
+}
+```
+
+This has problems that it is going directly through the point of size 9.8 ish.
+What I think I should do is get more data and try this again.
+
+## Remodeling
+
+I will instead try to add a polynomial with the size as the relationship there is non linear
+
+```{r}
+m.figInter_sizePoly3 = lm(number ~ figDim + figDim:size + poly(size, 6) - 1, data = overplotting)
+summary(m.figInter_sizePoly3)
+plot(m.figInter_sizePoly3)
+```
+This model is quite a bit better as it has a r sqaured value of .9 and RSE which is half as much. This is quite important as we are trying to predict the whole curve.
+
+We can now have a look at what sort of predictions it will make.
+
+## Predictions 3rd polynomial
+
+```{r}
+plot(sizeSeq, predict(m.figInter_sizePoly3, data.frame(size=sizeSeq, figDim= 1)), ylim = c(-30,400))
+for (fig in 1:10) {
+  figConstant = predict(m.figInter_sizePoly3, data.frame(size=sizeSeq, figDim= fig))
+  lines(sizeSeq, figConstant)
+}
+```
+
+Clearly something is wrong iwth this as it is predicitng negative values which is something that cannot happen. AS there will always be alteast one viisible point (given that there are any poitns at all!).
+
+## Remodling
+```{r}
+m.figInter_sizePoly2 = lm(number ~ figDim + figDim:log(size) + poly(log(size), 2) - 1, data = overplotting)
+summary(m.figInter_sizePoly2)
+plot(m.figInter_sizePoly2)
+```
+
+## Predictions 2rd polynomial
+```{r}
+plot(sizeSeq, predict(m.figInter_sizePoly2, data.frame(size=sizeSeq, figDim= 1)),ylim=c(-30,400))
+for (fig in 1:10) {
+  figConstant = predict(m.figInter_sizePoly2, data.frame(size=sizeSeq, figDim= fig))
+  lines(sizeSeq, figConstant)
+}
+
+plot(sizeSeq, predict(m.figInter_sizePoly2, data.frame(size=sizeSeq, figDim= 1)),ylim=c(-30,400))
+for (fig in 1:10) {
+  figConstant = predict(m.figInter_sizePoly2, data.frame(size=sizeSeq, figDim= fig))
+  lines(sizeSeq, figConstant)
+}
+
+```
+
+In this case there are still problems. I might try just seeing whath
+
+## Remodling logarithms transfomration
+It seems to me that I forgotton the basics.
+
+As simply taking a log transformation has done a pretty good job of capturing what I want to be getting.
+
+```{r}
+df = overplotting #>
+  #filter(size < 20)
+
+m.figInterSize = lm(number ~ figDim * log(size)- 1, data=df)
+summary(m.figInterSize)
+plot(m.figInterSize)
+
+plot(sizeSeq, predict(m.figInterSize, data.frame(size=sizeSeq, figDim= 1)),
+     ylim=c(-30,250))
+for (fig in 1:15) {
+  figConstant = predict(m.figInterSize, data.frame(size=sizeSeq, figDim= fig))
+  lines(sizeSeq, figConstant)
+}
+
+plot(figDimSeq, predict(m.figInterSize, data.frame(size=0.5, figDim= figDimSeq)),
+     ylim=c(-30,250))
+for (size in 1:15) {
+  sizeConstant = predict(m.figInterSize, data.frame(size=size, figDim= figDimSeq))
+  lines(figDimSeq, sizeConstant)
+}
+coef = m.figInterSize[["coefficients"]]
+predictionModel = paste0("function(figDim, size) ",
+                         # coef["(Intercept)"], " + ",
+                         coef["figDim"], " * figDim + ",
+                         coef["log(size)"], " * log(size) + ",
+                         coef["figDim:log(size)"], " * log(size) * figDim")
+predictionModel
+```
+
+## Baysion model
+
+```{r}
+library(rethinking)
+data = overplotting
+
+m.figInterLogSize <- quap(
+  alist(
+    number ~ dnorm(mu, sigma),
+    mu <- bFig * log(figDim) + bSize * log(size),
+    c(bFig, bSize) <- dnorm(0,5),
+    sigma ~ dexp(1)
+  ), data = data
+)
+
+# call link without specifying new data
+# so it uses original data
+mu <- link( m.figInterLogSize )
+# summarize samples across cases
+mu_mean <- apply( mu , 2 , mean )
+mu_PI <- apply( mu , 2 , PI )
+
+# simulate observations
+# again no new data, so uses original data
+
+D_sim <- sim( m.figInterLogSize , n=1e4 )
+D_PI <- apply( D_sim , 2 , PI )
+
+plot( mu_mean ~ overplotting$size , col=overplotting$figDim , ylim=range(mu_PI) ,
+xlab="Number of points" , ylab="Size")
+
+plot( mu_mean ~ overplotting$figDim , col=overplotting$size , ylim=range(mu_PI) ,
+xlab="Number of points" , ylab="Size")
+abline( a=0 , b=1 , lty=2 )
+for ( i in 1:nrow(overplotting) ) lines( rep(overplotting$number[i],2) , mu_PI[,i] , col=rangi2 )
+```
+
+## Storing LM
+
+```{r}
+save(m.figInter_sizePoly3, file = "numberOfDistinctPointsModel.rData")
+```
+
+However i better way for this to be done is to just grab the coefficients which can then be copied and pasted into the codebase
+```{r}
+coef = m.figInterSize[["coefficients"]]
+# coef = m.figInterLogSize@coef
+# predictionModel = paste0("function(figDim, size) ",
+#                          coef["figDim"], " * figDim + ",
+#                          coef["poly(size, 2)1"], " * size + ",
+#                          coef["poly(size, 2)2"], " * size^2 + ",
+#                          # coef["poly(size, 3)3"], " * size^3 + ",
+#                          coef["figDim:size"], " * size * figDim")
+predictionModel = paste0("function(figDim, size) ",
+                         # coef["(Intercept)"], " + ",
+                         coef["figDim"], " * figDim + ",
+                         coef["log(size)"], " * size + ",
+                         coef["figDim:log(size)"], " * size * figDim")
+
+predictionModel = paste0("function(figDim, size) ",
+                         # coef["(Intercept)"], " + ",
+                         coef["bFig"], " * figDim + ",
+                         coef["bSize"], " * size + ",
+                         coef["bFigSize"], " * size * figDim")
+predictionModel
+```
+

@@ -1,0 +1,154 @@
+# Describe
+01/12/2022
+
+The describe function is supposed to help give someone a general understanding of what a graph would look like. It isnt talking about this particular graph but just the graphs in general.
+
+Currently it only works with a few of the base r plots.
+```{r}
+scatter = FittedLinePlot(NULL, x = rnorm(1e2), y = rnorm(1e2))
+scatter
+Describe(scatter, whichLayer = c(1,2))
+hist = hist(rnorm(1e3))
+Describe(hist)
+```
+
+I am going to add to hte describe function.
+
+## Move to whisker templates
+Firstly moving it over to whisker templates. THis will make it easier to add language support later as well as makeit easierto edit by just doing plain text files as opposed to complex source code.
+
+It there  will be a csv file that has each of the base r plots information in each row.
+This stirng can be a moustache template to be filled out by generic messages.
+
+```{r}
+
+.readTxtCSV = function(location) {
+  temp = read.csv(system.file(paste0("whisker/", location), package="BrailleR"), header = T, as.is = T)
+  sublists = length(temp) > 2
+  templates = list()
+  for (plot in 1:length(temp[,1])) {
+    templates[[temp[plot,1]]] = if (sublists) {
+      sublist = as.list(gsub("\n", "",temp[plot,2:length(temp)]))
+      names(sublist) = colnames(temp)[2:length(temp)]
+      sublist
+    } else {
+      gsub("\n", "",temp[plot,2])
+    }
+  }
+  return(templates)
+}
+
+.renderDescription = function(name) {
+  template = .readTxtCSV("Describe/baseR.txt")
+  generics = .readTxtCSV("Describe/generics.txt")
+  rendered = list(
+    title = whisker::whisker.render(template = template[[name]]["title"], data=generics),
+    general = whisker::whisker.render(template = template[[name]]["general"], data=generics),
+    RHints = whisker::whisker.render(template = template[[name]]["RHints"], data=generics)
+  )
+  class(rendered) = "description"
+  return(rendered)
+}
+
+```
+
+### Add in ggplot
+With ggplot there is a problem where each will needs its own descriptions.
+
+It could be done in a way that is interactive
+Or could be set via a paramter in Describe
+
+As JOnathan pointed out it is quite important that there is a default ot work in the case of not being in a interactive environment.
+
+#### Sorting out descriptions that exist and dont exist
+It works better if we just pass the class to the .renderDescription and then it checks afterwards before returns if it is an empty description.
+
+```
+# desc = desc |>
+desc[unlist(lapply(desc, \(desc) {
+          nchar(desc$title) + nchar(desc$general) + nchar(desc$RHints) != 0
+        }))]
+```
+
+#### GeomPoint
+
+This has been implemented and works as in here:
+
+```{r}
+simplePoint = ggplot(NULL, aes(rnorm(1e2), rnorm(1e2))) +
+  geom_point()
+description = Describe(simplePoint)
+description
+
+simpleHist = ggplot(NULL, aes(rnorm(1e2))) +
+  geom_histogram()
+description = Describe(simpleHist, whichLayer = 1)
+description
+```
+
+Now however I will have to start adding in some text descriptions of myself for ggplot objects. This would be things like geom_bar, geom_boxplot, geom_smooth and geom_line
+
+#### GeomBar
+
+Geom bar is a slight challenge as it covers three different types of plots.the first is a classic geom bar with heights being proportional to number of cases in each group. Where are geom col is similar but the heights represent actual values in the data. Lastly geom hist is quite different as it istead for looknig at one variable.
+
+#### GeomBoxplot
+
+```{r}
+x = rnorm(1e3)
+
+simpleBoxPlot = ggplot() +
+  geom_boxplot(aes(x=x))
+
+simpleBoxPlot
+
+group = as.factor(rep(1:5, length(x)/5))
+
+groupedBoxplot = ggplot() +
+  geom_point(aes(x=x, y=group), alpha=0.1) + 
+  geom_boxplot(aes(x=x, y=group), alpha=0.4)
+
+groupedBoxplot
+Describe(groupedBoxplot, whichLayer=c(1,2))
+```
+
+#### GeomSmooth
+```{r}
+simpleSmoother = ggplot(cars, aes(speed, dist)) + 
+  geom_smooth()
+simpleSmoother
+```
+
+#### GeomLine
+
+```{r}
+simpleLine = ggplot(cars, aes(speed, dist)) + 
+  geom_line()
+simpleLine
+
+Describe(simpleLine, whichLayer = c(1,2,3))
+```
+
+#### Testing
+
+```{r}
+baseHist = hist(rnorm(1e3))
+Describe(baseHist)
+
+baseScatter = ScatterPlot(cars, x=cars$speed, y = cars$dist, base=T)
+Describe(baseScatter)
+
+baseTimeSeries = TimeSeriesPlot(austres, x= austres, base = T)
+Describe(baseTimeSeries)
+
+point = ggplot(cars, aes(speed,dist)) + geom_point()
+Describe(point)
+bar = ggplot(cars, aes(speed,dist)) + geom_bar()
+Describe(bar)
+boxplot = ggplot(cars, aes(speed)) + geom_boxplot()
+Describe(boxplot)
+smooth = ggplot(cars, aes(speed, dist)) + geom_smooth()
+Describe(smooth)
+line = ggplot(cars, aes(speed, dist)) + geom_line()
+microbenchmark::microbenchmark(Describe(baseHist))
+```

@@ -1,0 +1,192 @@
+# Mischeanolous working
+
+This will ahve various bug fixes and issues resovles that dont fit into any of the other sections
+
+## GITHUB nightmare
+
+I started working quite quickly.
+
+Didnt really know the procedure properly and so forked repor and worked like usual.
+
+This meant that I was branching and merging into my master as opposed to the orginal repo.
+
+Had to reset my master back to original and slowly copy changes from bracnhes into clean PRs
+
+Once that was done then I could carry on with clean work on expand limits and beyond.
+
+## Wrong title names
+
+29/11/22 The problem here is the one with issue #24.
+
+It is that the base plot hist isnt picking up on the main title properly.
+
+```{r}
+x <- hist(airquality$Ozone, main = "")
+y <- hist(airquality$Ozone)
+VI(x)
+VI(y)
+```
+
+I think that this problem is right across the board for the base plots. As it looks like they are grabbing x$ExtraArgs$main rather than x\$main. They should check first for a given name then just go to the default name.
+
+### Solution 1
+
+A potential solution could be to have a function that gabs the name of a graph regardless of the type. As I believe the base plots are all similar in that way.
+
+```{r}
+getGraphName = function(graph) {
+  if (length(graph$main) > 0 && nchar(gsub(" ", "",graph$main, fixed=T)) != 0) {
+    paste("With the title:",graph$main)
+  } else if (nchar(graph$ExtraArgs$main) > 0) {
+    paste("With the title:",graph$ExtraArgs$main)
+  } else {
+    "With no title"
+  }
+}
+```
+
+Will this work with all the types of supported base plots
+
+```{r}
+x = rnorm(1e4)
+
+boxplotWith = boxplot(x, main="This is the title")
+getGraphName(boxplotWith)
+
+boxplotWithout = boxplot(x)
+getGraphName(boxplotWithout)
+
+boxplotNone = boxplot(x, main="   ")
+getGraphName(boxplotNone)
+
+
+dotplotWith = with(airquality, dotplot(Ozone~Month,main="This is the title"))
+getGraphName(dotplotWith)
+
+dotplotWithout = with(airquality, dotplot(Ozone~Month))
+getGraphName(dotplotWithout)
+
+dotplotNone = with(airquality, dotplot(Ozone~Month, main=" "))
+getGraphName(dotplotNone)
+
+
+histWith = hist(x, main="This is the cool title")
+getGraphName(histWith)
+
+histWithout = hist(x)
+getGraphName(histWithout)
+
+histNone = hist(x, main="  ")
+getGraphName(histNone)
+```
+
+Im going to say that this works for the three base plots and I will implement it into the package.
+
+This is probably a good point to note that I think it could be a good idea to switch them all over to mustache templates.
+
+Here is testing using that method integrated into the package. I am using the plots from above
+
+```{r}
+VI(boxplotWith)
+VI(boxplotWithout)
+VI(boxplotNone)
+
+VI(dotplotWith)
+VI(dotplotWithout)
+VI(dotplotNone)
+
+VI(histWith)
+VI(histWithout)
+VI(histNone)
+```
+
+Besides more github troubles with accidentally pushing too early this has all gone smoothly
+
+## issue 62 timeseries not calling ggplot
+
+6/12/22 We have the problem taht in the TimeSeriesPlot function there simply isnt a call to the ggplot where there should be.
+
+We can add it in but we will need more variables and currently it is a bit messy with the naming of the variables.
+
+```{r}
+attach(airquality)
+op = par(mfcol=c(3,2))
+plot(as.ts(Wind), ylab="Wind", col=4)
+test1 = TimeSeriesPlot(x=Wind, col=4, base=TRUE)
+test1 #does the plot method work?
+plot(as.ts(Ozone), ylab="Ozone")
+test2 = TimeSeriesPlot(x=Ozone, base=TRUE)
+test2 # does the plot method work?
+par(op)
+detach(airquality)
+
+#ggplot tests
+#Normal data
+basic = TimeSeriesPlot(airquality, x=airquality$Temp)
+basic
+#ts data
+withTitle = TimeSeriesPlot(UKDriverDeaths,  main = "UK driver deaths", sub = "For the month Januaray")
+withTitle
+withLabs = TimeSeriesPlot(sunspots, ylab="Number of spots", xlab="Year")
+withLabs
+
+xdata = rnorm(153)
+test = TimeSeriesPlot(airquality, x=xdata)
+test
+```
+
+### Problem
+
+There was a n error that the examples in the help files that I added didnt work properly. It couldnt find the data which was being sent.
+
+## issue 63
+
+6/12/22
+
+Ths is working with the help pages of both VI and Describe.
+
+I have split them out. Haven't added much text as there was already alot. I have made the Authors more representative of who has done work.
+
+## issue #67 build failure
+
+It seems that there is a problem when importing the XML package on the github build server.
+
+I will reduce the imports and see if that helps.
+
+I did this and it did help.
+
+But then the pkgdown started failing.
+
+I have fixed it up with a suggestion from the issue on he github action repo.
+
+## Switching to Bookdown
+
+5/01/2022
+
+At the start of this new year I am trying to organise my notes.
+
+I thought it would be best to put them into a bookdown as it will let me separate it out a little bit.
+
+### Scope issues
+
+There have been some referencing issues where I am not putting all the information for it to run in the rmd file.
+
+This in particular with using internal functions so I have used ::: to make some of these methods accessible.
+
+### SVG problems
+
+There were more problems that I was facing with the baseR integration with SVGThis and AddXML. As we are considering that baseR graphics are deprecated when it comes to BrailleR I have simply not evaluated these in the rendering of this book.
+
+### Timeseries analysis
+
+I ahve a largish rmd file which is all of the timeseries analysis. This takes a very long time to render so becuase of that I removed it form the book. It is something that I have in my files and can render if needed.
+
+### Resolution
+
+All in all it went well and it is now sorted.
+
+## Adding in pre-commits
+
+I have added some pre-commits to this repo. It will means that whenever a file is committed that code will ahve to pass some checks as well as be formatted.
+
+This should help prevent little types and such breaking the code. It will also start to enforce a style guide on the code so it is indented as you would expect.

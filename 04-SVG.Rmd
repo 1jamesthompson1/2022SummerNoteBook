@@ -1,0 +1,1524 @@
+---
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# X SVG
+
+2/12/2022 After doing all of these things it is important for a blind
+user to acutally be able to get some inference from the graph. This svg
+idea sounds like a good one.
+
+```{r}
+simplePoint = data.frame(x=rnorm(1e3), y=rnorm(1e3)) %>% ggplot(aes(x,y)) +
+  geom_point()
+simplePoint
+
+# Worth noting here that it can take a really long time to execute make asscessible SVG with long data amount as it has to do a long loop for each data point.
+simpleLine = data.frame(x = 1:1e3, y = rnorm(1e3)) %>%
+  ggplot(aes(x,y)) +
+  geom_line()
+
+simpleHist = hist(rnorm(1e2))
+plot(simpleHist)
+MakeAccessibleSVG(simpleHist)
+```
+
+21/12/22 I can get it to make the SVg but there seems to be an issue
+with getting it displayed I wonder if it is a problem with the ViewSVG
+function
+
+I think that it might be a problem with the .AddSVGLinks particular with
+the `FileSet = sub(".svg", "", SVGFiles[file.exists(XMLFiles)])` line
+
+I cant really figure out what is happening with ViewSVG so I am going to
+create multiple svgs and then run it and see what happens. I can find
+anywhere a defined standard workflow that it expected to be used by
+blind people. On top of that I really think that it might be better to
+sue moustache templating.
+
+## Documenting SVG stuff
+
+It seems that there is a lacklustre documentation about how to use SVG
+from both a internal and external perspective.
+
+This includes no mention of it in BrailleRInAction as well as a clear
+description in the help pages.
+
+There is also no examples for the SVG graphs this would help show how
+you could use it.
+
+### Workflow
+
+It seems that for a simple user they can create a graph and then use the
+`MakeAccessibleSVG()` function to then create all the SVG things needed
+and display it in their browser of choice.
+
+This works well however you cant seem to have it do it with a graph in
+the device window.
+
+## ggplot
+
+I am tasked with adding proper ggplot support to the
+`MakeAccessibleSVG`.
+
+Firstly I will have a look at what is currently there.
+
+Ideas list:
+
+-   To help understand some graphs sonfication might be useful
+-   Summarise plots very similarly to what is done with VI
+
+### Current status
+
+When calling it with a ggplot it looks like this:
+
+    function(x, file = "test", view=interactive(), ...) {
+          pdf(NULL)  # create non-displaying graphics device for SVGThis
+          svgfile = SVGThis(x, paste0(file, ".svg"),createDevice=FALSE)
+          xmlfile = AddXML(x, paste0(file, ".xml"))  # needs device to do grid.grep()
+          dev.off()  # destroy graphics device, now that we're done with it
+          
+            BrowseSVG(file=file, view=view, ...)
+          .SVGAndXMLMade()
+          return(invisible(NULL))
+    }
+
+#### SVGThis
+
+This doesn't do too much and seems to operate correctly. I may have to
+come back to this at a later date but for now I will leave it as is.
+
+#### AddXML
+
+This is the method that at the moment is straight failing.
+
+If you run the `MakeAccessibleSVG` function with this code:
+
+    simpleLine = data.frame(x = 1:1e4, y = rnorm(1e4)) |>
+      ggplot(aes(x,y)) +
+      geom_line()
+
+Then it comes up with this output: \> This is an untitled chart with no
+subtitle or caption. It has x-axis 'x' with labels 0, 2500, 5000, 7500
+and 10000. It has y-axis 'y' with labels -2.5, 0.0 and 2.5. The chart is
+a set of 1 line. Line 1 connects 10000 points. Error in
+grid.grep(gPath("xlab-b", "text"), grep = TRUE)\$name : \$ operator is
+invalid for atomic vectors Called from: paste0(grid.grep(gPath("xlab-b",
+"text"), grep = TRUE)\$name, ".1")
+
+The first bit of the output is just from the VI function but the rest is
+an error.
+
+The error is specifically on line 86 of the `AddXMLMethod` file.
+
+see [Updating AddXML to make it work]
+
+22/12/22
+
+To try to understand what is going on I will be commenting the entire
+`AddXML.ggplot` function
+
+```{r}
+library(XML)
+library(grid)
+file="test.xml"
+doc = newXMLDoc()
+top = newXMLNode("ggplot", doc = doc)
+XML::ensureNamespace(top, c(sre = "http://www.chemaccess.org/sre-schema"))
+root= xmlRoot(doc)
+annotations = BrailleR:::.AddXMLAddNode(root, "annotations")
+
+## Now it starts to get some of the grobs from the graphic
+
+# This will be the test code
+simpleLine = data.frame(x = 1:1e4, y = rnorm(1e4)) |>
+  ggplot(aes(x,y)) +
+  geom_line() +
+  labs(title="This is a test", x= "test")
+
+components = list()
+
+pdf(NULL)
+xs = BrailleR:::.VIstruct.ggplot(simpleLine)
+print(simpleLine)
+grid.force()
+backgroundGrob = grid.grep(gPath("panel.background..rect"), grep=TRUE)
+titleGrob = grid.grep(gPath("title", "text"), grep=TRUE)
+titleId = paste0(titleGrob$name, ".1")
+title = BrailleR:::.AddXMLAddTitle(annotations, title=xs$title, id=titleId)
+components[[length(components) + 1]] = title
+lab_test = grid.get(grid.grep(gPath("xlab-b"), grep=TRUE))
+title_test = grid.get(titleGrob)
+get_test = grid.get(gPath("title"), grep=TRUE)
+get_test = grid.get(gPath("xlab-b", "titleGrob", "text"), grep=TRUE)
+## It seems at this point we are now quareying a grob object so i need to learn about grob objects and find a workflow so that I can actually work with them.
+xAxisLabelGrob = paste0(grid.grep(gPath("xlab-b"), grep=TRUE)$name, ".1")
+```
+
+This has served its purpose for now as i will start to work on the
+problems in the next sections that I have found.
+
+#### Updating AddXML to make it work
+
+22/12/2022
+
+It appears that some thing have changed since this code was written 5
+years ago.
+
+##### error with gPaths
+
+Many of the gPaths seem to be incorrect I will go through and correct
+them to see if I can get it owrking with geom_line first.
+
+This will be my test chunk
+
+```{r}
+simpleHist = data.frame(x=rnorm(1e2)) |>
+  ggplot(aes(x=x)) +
+  geom_histogram()
+simpleHist
+pdf(NULL)
+print(simpleLine)
+grid.force()
+
+
+hmm = paste0(grid.grep(
+        gPath("xlab-b", "titleGrob", "text"), grep=TRUE)$name,
+      ".1")
+test = grid.grep(gPath("xlab-b", "titleGrob", "text"), grep=TRUE)
+
+grid.ls()
+dev.off()
+```
+
+After having a look through it it seems that for it to work there needs
+to be another step added to the path. As the text grob is not found
+unless you go into the titleGrob first.
+
+the line is replaced with:
+`grid.get(gPath("xlab-b", "titleGrob", "text"), grep=TRUE)`
+
+Now looking at the next erroro on line:
+`xAxisTickLabelGrob = paste0(grid.grep(gPath("axis-b", "axis", "axis", "text"), grep = TRUE)$name, ".1")`.
+
+I think that it is due to text now being the child of a `titleGrob` as
+opposed to being a direct descendant. There is also a problem with
+adding absoulute Grobs in the mix.
+
+I have adding the titleGrob to the four gPaths in this function as well
+as `absoluteGrob` for the axis grobs. They are all related to axis
+labels and tick marks.
+
+This has fixed the first problem.
+
+##### .AddXMLAddGGplotLayer
+
+There is a an error which start at the `.AddXMLAddGGplotLayer` call in
+the AddXML function. It looks like this: \> 16. lapply(X = X, FUN = FUN,
+...) 15. sapply(kids, function(x) any(inherits(x, omitNodeTypes))) 14.
+xmlApply.XMLInternalNode(node, function(x) .Call("R_fixDummyNS", x,
+TRUE, PACKAGE = "XML")) 13. xmlApply(node, function(x)
+.Call("R_fixDummyNS", x, TRUE, PACKAGE = "XML")) 12.
+xmlFixNamespaces(node, fixNamespaces) 11.
+addChildren.XMLInternalNode(parent, node, at = at) 10.
+addChildren(parent, node, at = at) 9. XML::newXMLNode(paste("sre:", tag,
+sep = ""), parent = root) at AddXMLInternal.R#262 8.
+.AddXMLAddNode(root,"annotation") at AddXMLInternal.R#238 7.
+.AddXMLAddAnnotation(root, position = position, id = fakeSegmentId, kind
+= "active") at AddXMLInternal.R#218 6. .AddXMLcenterLine(root, position
+= i, id = lineId, data$x[i], data$y[i], data$x[i + 1], data$y[i + 1]) at
+AddXMLInternal.R#169 5. .AddXMLAddGGPlotLayer(annotations,
+xs$panels[[1]]$panellayers[[layerNum]]) at AddXMLMethod.R#108 4.
+AddXML.ggplot(x, paste0(file, ".xml")) at AddXMLMethod.R#2 3. AddXML(x,
+paste0(file, ".xml")) at MakeAccessibleSVGMethod.R#33 2.
+MakeAccessibleSVG.ggplot(simpleLine) at MakeAccessibleSVGMethod.R#3 1.
+MakeAccessibleSVG(simpleLine)
+
+To do this again I will have to recreate the scenario like I did when
+explring this function. However I am working with the XML so wont have
+to have the grid graphics code.
+
+```{r manual addXML}
+file="test.xml"
+doc = newXMLDoc()
+top = newXMLNode("ggplot", doc = doc)
+XML::ensureNamespace(top, c(sre = "http://www.chemaccess.org/sre-schema"))
+root= xmlRoot(doc)
+annotations = BrailleR:::.AddXMLAddNode(root, "annotations")
+
+# This will be the test code
+simpleLine = data.frame(x = 1:1e2, y = rnorm(1e2)) |>
+  ggplot(aes(x,y)) +
+  geom_line() +
+  labs(title="This is a test", x= "test")
+
+xs = BrailleR:::.VIstruct.ggplot(simpleLine)
+pdf(NULL)
+print(simpleLine)
+grid.force()
+BrailleR:::.AddXMLAddGGPlotLayer(annotations, xs[["panels"]][[1]][["panellayers"]][[1]])
+grid.ls()
+lineGrobs = grid.grep(gPath("panel", "panel-1", "GRID.polyline"), grep=TRUE, global=TRUE)
+lineGrob = lineGrobs[[1]]
+
+dev.off()
+
+```
+
+It looks like just with the previous axis problems the structure has
+changed and this means that I will need to update it a little bit.
+
+Line number 158 which is:
+`lineGrobs = grid.grep(gPath("GRID.polyline"), grep=TRUE, global=TRUE)`
+seems to be qutie out of date.
+
+To get the information that I would expect it would need to be:
+`lineGrobs = grid.grep(gPath("panel", "panel-1", "GRID.polyline"), grep=TRUE, global=TRUE)`
+However this as well assumes that there is only one panel.
+
+It seems that when running this it now enters a infinite loop.
+
+I have found that it is simply because there is so much data. In this
+case there was 10000 data points and it was just takng to long ot
+process them.
+
+I have reduced it and now it seems to work.
+
+```{r}
+simpleHist = data.frame(x=rnorm(1e2)) |>
+  ggplot(aes(x=x)) +
+  geom_histogram()
+xs = BrailleR:::.VIstruct.ggplot(simpleHist)
+MakeAccessibleSVG(simpleHist)
+```
+
+now that it works time for improvement to take place.
+
+### Improvement of SVG in BrailleR
+
+I am still yet to understand how a use will use this software to full
+effect.
+
+#### Email to Jonathan
+
+I will send a email to Jonathan asking him what the workflow looks like
+for a blind user.
+
+```{r email to Jonathan}
+simpleHist = data.frame(x=rnorm(1e2)) |>
+  ggplot(aes(x=x)) +
+  geom_histogram()
+simpleLine = data.frame(x=1:1e2, y = rnorm(1e2)) |>
+  ggplot(aes(x,y)) +
+  geom_line()
+
+MakeAccessibleSVG(simpleHist, "histogram", cleanup= F)
+
+#Now we will remove the file to make a clean bookdown
+file.remove("histogram.xml")
+file.remove("histogram.svg")
+
+MakeAccessibleSVG(simpleLine, "simpleLine")
+
+```
+
+#### Moving to whiskers BrowseSVG
+
+Currently browse svg works off lots of cat function calls.
+
+I have moved this to whiskers templates.
+
+This is because at current state it is really messy with magic strings
+mixed in with logic. ONce I make this move then I will start removing
+the side effect from the functions to make the whole process less
+bloated.
+
+I have moved all of the magic strings to a template found in the
+whiskers file.
+
+This is now made the code quite clean for this function.
+
+I have removed any "suppoprt" for different directories. This is becuase
+it wasnt fully implemented. This is something that I could add in the
+future.
+
+I will now test that it works as expected by using the MakeAccessibleSVG
+
+##### baseR
+
+Note 5/01/2023. After coming back from Christmas in rendering the
+bookdown this chunk was causing repeated problems so I have decided that
+it wont be evaluated when it comes to rendering the book. I am not too
+worried about this as we are deprecating support for baseR plots
+anyways.
+
+```{r baseR and SVG, eval=FALSE}
+## Boxplot
+boxplot = boxplot(rnorm(1e4))
+MakeAccessibleSVG(boxplot)
+
+## Dotplot
+doplot = dotplot(rnorm(1e4), title = 'This is a really cool title')
+MakeAccessibleSVG(doplot)
+
+## Histogram
+histogram = hist(rnorm(1e4))
+# This is commented out as it doesnt work in a non interactive enviroment
+# Not fixed as baseR is too be depreceated.
+MakeAccessibleSVG(histogram)
+
+##Scatter plot
+attach(airquality)
+scatter = ScatterPlot(x=Wind, y=Ozone, pch=4, base=TRUE)
+detach(airquality)
+scatter
+MakeAccessibleSVG(scatter)
+
+```
+
+It seems that there are a couple of problems with the base plots but I
+am not sure if this is to do with changes that I have made I will have
+to have a look into it.
+
+###### Scatter plot
+
+For the scatter plot it seems to be that the subtitles are correct but
+it doesn't show the correct information
+
+###### Dotplot
+
+The dotplot itself seems not to work at all when it comes to producing a
+usable SVG.
+
+------------------------------------------------------------------------
+
+For both of these problems however I will leave it for now. This is
+becuase as Jonathan stated in a meeting worrying aobut the graphics that
+arent ggplot is not worth our time. The general goal is to move over all
+of the graphics abilities to ggplot framework.
+
+##### ggplot
+
+There are currently only two different supported geoms in the AddXML
+function is bar and line.
+
+```{r ggplot and SVG}
+## TSPlot
+tsplot = TimeSeriesPlot(airquality, x=airquality$Temp)
+tsplot
+MakeAccessibleSVG(tsplot)
+
+## Bar chart
+barChart = ggplot(Orange, aes(x = Tree)) +
+  geom_bar(position = "stack") + 
+  labs(title = "This is a bar chart")
+barChart
+MakeAccessibleSVG(barChart)
+
+## Histogram
+histogram = ggplot(attenu, aes(x=dist)) +
+  geom_histogram()
+histogram
+MakeAccessibleSVG(histogram)
+```
+
+###### Missing titles
+
+In no form of the ggplots are titles showed in the SVG. This is a erro
+as it is setup to show it. I guess that something has happened to the
+grob so when it is searching it is just getting null.
+
+#### Moving to Whiskers with ViewSVG
+
+this function is supposed to almost be a home page for all of the
+accessible svg you have made so far.
+
+Currently it uses a odd md rendered to html system.
+
+I think that the use of md is a cool idea but moving it to a pure html
+mustache template might be better to keep it consistent with BrowseSVG
+function. Then I think from there we can move over to md files as there
+is a benefit to them.
+
+I will create some examples to see how it works. Luckily I can just grab
+all of the information from the examples in the .Rd document.
+
+```{r viewSVG with whiskers}
+tsplot = TimeSeriesPlot(airquality, x=airquality$Temp)
+MakeAccessibleSVG(tsplot, file = "tsplot")
+
+barChart = ggplot(Orange, aes(x = Tree)) +
+  geom_bar()
+MakeAccessibleSVG(barChart, file = "barChart")
+
+histogram = ggplot(attenu, aes(x=dist)) +
+geom_histogram()
+  histogram
+MakeAccessibleSVG(histogram, file="histogram")
+
+ViewSVG()
+```
+
+This implementation has gone smoothly expect for a little difficulties
+with a templating problem.
+
+As it currently sorts for a div command it is a little reliant on the
+other template.
+
+Just going to have a quick look at what it used to be
+
+```{r}
+tsplot = TimeSeriesPlot(rnorm(1e2))
+MakeAccessibleSVG(tsplot)
+ViewSVG()
+```
+
+## SVG base histogram
+
+5/01/2023
+
+When trying to get my notes to render and work properly i seem to of
+found a problem with the make accessible function.
+
+In particular it is with SVGThis.histogram
+
+It comes up with this error which is in .addInfo \> Error in
+grid::grid.set(name, grid::gTree(children = \>
+grid::gList(elementGrob("title", : 'gPath' does not specify a valid
+child
+
+### Idea
+
+I suspect that it might be due to with the plotting or non plotting of
+the object when working with the grid graphics.
+
+### Resolution
+
+As Jonathan has mentioned to be that it is alright to let base r
+grpahics be deprecated. This will mean that I am going to comment this
+out and move one.
+
+## Updating MakeAccessibleSVG default names
+
+5/01/2023
+
+I have changed both the default file name and the title of file to be
+*graphVariableName*-SVG. This should help people who are looking through
+the folder or the tabs in their browser.
+
+Here we create a quick plot and then see if it works.
+
+```{r}
+namedPlot = ggplot(infert, aes(y = age, fill = education)) + geom_bar()
+MakeAccessibleSVG(namedPlot)
+
+TimeSeriesPlot(USAccDeaths) |>
+  MakeAccessibleSVG()
+# This one will have "TimeSeriesPlot(USAccDeaths)" as the graph name. This works quite well.
+```
+
+## Fixing MakeAccessibleSVG
+
+This is an area for all the systemic issues with MakeAccessibleSVG and
+its related functionality.
+
+### Titles not working for ggplot
+
+The titleGrob assignment in AddXML.ggplot seems to be incorrect as the
+title when it is there does not show up and when it is not in the ggplot
+then it still showss nothing.
+
+I started by changing the logic for checking whether to add a title in
+to check the struct instead of the titleGrob and that fixed it shows a
+empty title when there isnt a title but it has not fixed the problem of
+the title being blank when there should be a title there.
+
+I will leave this and have to come back to it when i cna at a future
+date.
+
+## Adding ggplot geoms
+
+5/01/2023 Fresh year fresh start.
+
+### Plan
+
+I am going to start going through and looking at the
+.AddXMLAddGGPlotLayer and try to add more blocks to the if else
+statement so that there is more support.
+
+The first goal will be to get bar and line working as they should in a
+useful manner. This is currently covered by issue #82
+
+Once I get to this point then I will have a look at adding the ability
+to do layers and look through the various layers. This is covered by
+issue #83
+
+After that has been achieved I will focus on really expanding the
+reaches of the geom. Hopefully getting in box plot, points and area.
+
+Once this is done as I envision it then we could say that he SVG are
+atleast useful in many situations with ggplot.
+
+### geom_line
+
+6/01/2023 issue #82 I am going to get the line to be alot more useful so
+that a user can actually "explore" the graph by using keyboard commands.
+
+#### Current state
+
+In the current situation it renders globs for everysingle line. This
+means if it is a time series from 1800-2000 with a entry for each year
+you will have to press through every single year (200 times) to get a
+understanding of the line.
+
+For example
+
+```{r}
+tsplot = TimeSeriesPlot(Nile)
+MakeAccessibleSVG(tsplot)
+```
+
+Will produce a graph with No and the x labels and marks as would be
+expected.
+
+#### Plan
+
+Here are my ideas:
+
+[**Text description**](#text-description-for-lines)\
+The first thing that can be done is the easy of reading the information
+from the line. currently it comes out with something like this:
+
+> Line 1 from (1871,1120) to (1872,1160)
+
+This is hard to read and track as you move over the graph.
+
+I think something more like: (1871,1120) to (1872,1160) is line 1
+
+It is a small change but it think it will speed up the process a tad.
+Also it is a good warm up to get used to the current structure
+
+**Lines or points**
+
+#### Text description for lines {#text-description-for-lines}
+
+Now a quick change in one line seems to of done this.
+
+It is in the .AddXMLcenterLine function
+
+However this still doesnt make it easey to move along the graph. Becuase
+as my sighted eye moves along the line I am mostly interested in the up
+and down rather than the specifics about which segment I am looking at.
+It can be useful but not when I am quickly looking through.
+
+Firstly there is alot of repetition in information
+
+(1871,1120) to (1872,1160) is line 1
+
+Having a look here if we know the start date of the time series then we
+could already figure out what the line number is.
+
+Also as we can assume equal spacing for most time series data once we
+know the first year we will know what the second year is.
+
+All round there is alot of repeated information.
+
+What we could potentially do is only report on the change in y axis.
+
+The problem with this is that the graph might be a line that is more
+intersted in the x values rather than the y values.
+
+However I think that for the time being it is probably sufficient to do
+this as most line graphs are going to be time series plot or something
+similar and not vertical.
+
+So I think that changing it to 1120 to 1160 change is from 1871 to 1872
+which is line 1
+
+This does make the overall information more superfluous yet it will
+decrease the time to get the important information.
+
+As a screen reader will read it very much linearly left to right having
+the important information on the right would be more helpful.
+
+However at the end of the day maybe it is more helful to step along each
+point in the line rather than look at each line segment that makes up
+the line.
+
+#### Lines or points
+
+Currently there is output on the lines in this graph.
+
+As it is a line graph there are many smaller lines that make up this one
+big line.\
+This means when printing out we give information about each line.
+
+However it might be better for the user to actually get information
+about each line as if it was a point. So you would see the starting
+points for all the lines as well as the end point of the last line.
+
+Going to have a look at the internal grid information of the graph first
+though.
+
+```{r}
+# Taking the same example from the start ofthis geom section
+tsplot = TimeSeriesPlot(Nile)
+```
+
+It is to be noted that alot of the information in the
+.AddXMLAddGGPlotLayer is actually gotten form the vi.struct function
+rather than from the graphics grob.
+
+This makes sense and will make it quite alot easier to create the points
+rather than lines. I think that as much of the information as possible
+should be retrieve the from the VI functions rather from the graphics.
+This will help reduce the dry but will increase the dependency which is
+a trade off.
+
+Changing to points. I have changed it round to points by just making a
+new function this old function could be deleted if needed.
+
+Now rather than displaying information on lines it will display the
+information on the points.
+
+```{r}
+tsplot
+MakeAccessibleSVG(tsplot, cleanup = FALSE)
+```
+
+Now it will have a very simple output like this:
+
+![This means that you can easily "click through the
+line.](images/image-327979612.png)
+
+What about a complety random set of points
+
+```{r}
+x = runif(5)
+y = runif(5)
+df = data.frame(x, y)
+line = ggplot(df, aes(x,y)) +
+  geom_line()
+MakeAccessibleSVG(line)
+```
+
+Having a look at this it has highlighted a problem with there not being
+any significant figure cutoff.
+
+I think that setting this too something like 6 figures is appropriate.
+It is still quite a few figures but it atleast reduces the amount of
+reading you have to do.
+
+Now having a look at it with random large points
+
+```{r}
+x = runif(5, 1e4, 1e7)
+y = runif(5, 1e4, 1e7)
+df = data.frame(x, y)
+line = ggplot(df, aes(x,y)) +
+  geom_line() +
+  labs(title = "Test to see if it shows up")
+struct = .VIstruct.ggplot(line)
+struct$annotations$title
+MakeAccessibleSVG(line)
+```
+
+I have noticed a problem with the title and added it to the list [Titles
+not working for ggplot].
+
+This formatting does work and provides the user a simpler way to get the
+information.
+
+Before i consider this sorted I will wait on Godfreys response.
+
+#### Summarising
+
+As it currently is the xml output for this line chart will give you a
+list of points.
+
+It might be better if it splits the are into sections and then works
+from there.
+
+##### Creating intervals
+
+To do this I will take the range of the line data and seperate it into
+10 different interavls so that the user will only ever have to go
+through 10 different things. I could potentially also add in the
+individual points if the user really wants to know the specific.
+
+For right now we can try to get it to be in segments.
+
+I the min and max of the range
+
+I can get a a seq but now I need to get a interval
+
+```{r}
+# Recreate enviroment
+data = list()
+data$x = seq(0, 1e7, length.out = 53)
+data$y = runif(53, 100, 1000)
+maxItems = 10
+
+min = min(data$x)
+max = max(data$x)
+breaks = seq(min, max, length.out = maxItems+1)
+mins = breaks[1:(maxItems)]
+maxs = breaks[2:(maxItems+1)]
+meansAndSD = mapply(
+  function(min, max) {
+    sectionData = data$y[data$x < max & data$x >= min]
+    print(sectionData)
+    list(mean = mean(sectionData),
+         sd = ifelse(is.na(sd(sectionData)), 0, sd(sectionData)))
+  },
+  mins, maxs)
+```
+
+This has worked well to get the intervals.
+
+There seems to be a bit of a problem now. And it is becuase I am
+calcuing the mean of the dates. Where I should be calcuting the mean of
+the outcome variable i.e the y axis.
+
+This works quite well.
+
+It provides information about where in the graph you are.
+
+##### Slope range and meadian
+
+11/01/2022
+
+After a discussion with Jonathan about what should be done he suggested
+using slope range and median instead of my current mean and sd.
+
+To be able to calculate this I will need to know the range of the graph.
+This means that I can actually calculate the slope of these lines.
+
+I will us the layer_scales function. This means that I hve to pass to
+the addxml function the x object. I have done this with a litter
+refactoring. Now i hav the range I will need to calculate the slopes.
+
+```{r}
+#setting up enviroment
+plot <- ggplot(NULL, aes(x = start(Nile):end(Nile), y = Nile)) +
+  geom_line() +
+  expand_limits(x= c(1800))
+plot = TimeSeriesPlot(Nile)
+plot
+MakeAccessibleSVG(plot)
+plot_s <- .VIstruct.ggplot(plot)
+xs = plot_s[["panels"]][[1]][["panellayers"]][[1]]
+
+#Testing out with line 1
+data = xs$lines[[1]]$scaledata
+
+lineData <- data
+maxItems = 5
+
+min <- min(lineData$x)
+max <- max(lineData$x)
+breaks <- seq(min, max, length.out = maxItems + 1)
+mins <- breaks[1:(maxItems)]
+maxs <- breaks[2:(maxItems + 1)]
+slope_Range_Median <- mapply(
+  function(min, max, data) {
+    data |>
+      filter(x < max, x >= min) |>
+      mutate(startX = x, endX = lead(x), startY = y, endY = lead(y)) |>
+      drop_na() |>
+      select(matches("(start|end)\\w")) |>
+      mutate(slope = (startY - endY)/(startX - endX)) |>
+      select(slope) |>
+      summarise(min = min(slope), max = max(slope), median = median(slope)) |>
+      as.list()
+  },
+  mins, maxs, list(data = lineData), SIMPLIFY = FALSE
+)
+
+```
+
+The problem with this method is that it gets the slope in the scale of
+the data. I think it might be more useful to have it in the scale of the
+graph.
+
+This would mean I would have to have a look at the grid graphics.
+
+However I will just focus on getting this working. I am trying to update
+the FormatNumber function so that it counts digits. It seems like
+something like nchar counting.
+
+#### X Multiple lines
+
+In different types of plots you might have multiple lines in one layer.
+
+```{r}
+multi = ggplot(Orange, aes(x= age, y = circumference, color = Tree)) +
+  geom_line()
+multi.struct = .VIstruct.ggplot(multi)
+MakeAccessibleSVG(multi, cleanup = FALSE)
+```
+
+To do this we can use the group parameter which is found in the struct.
+
+Here is a comparison that can be used for a single line plot.
+
+```{r}
+single = TimeSeriesPlot(Nile)
+single.struct = .VIstruct.ggplot(single)
+MakeAccessibleSVG(single, cleanup = FALSE)
+```
+
+We can get the data for the different lines without too much work by
+going through the .VIstruct.ggpplot method.
+
+What will need to happen is the figuring out how to display the 5
+separate lines in a xml way that can then be read by the screen reader
+easily.
+
+It might be that I actually have to learn how to use the xml properly
+and get stuck in to refactoring the AddXMLInternal.
+
+##### SVG with multiple lines
+
+The SVG in both cases follow the exact same structure which is what you
+would expect.
+
+The lines themselves are found in the layout::\* tag.
+
+It is below the major and minor lines. For the single line there is one
+polyline in the GRID.polyline.\* group yet for mulitple there is n
+number polyline elements.
+
+##### XML strucutre
+
+Firstly I have found out that speech2 is supposed to be the descriptive
+version of speech. This means that there is options for the user to get
+more or less information.
+
+###### Combing AddAxis functions
+
+There were three add axis functions. One which was the main function and
+two other which were specific to x and y axis. I have removed these so
+that all calls are directly made to the .AddXMLAddAxis this removed code
+duplication.
+
+I think that for the time being I am going to move onto looking at
+geom_points
+
+### geom_bar
+
+#### Current state
+
+The current state of the geom_bar is as such.
+
+```{r}
+x = rnorm(1e2)
+plot = hist(x)
+MakeAccessibleSVG(plot)
+```
+
+It is actually in a pretty good working state
+
+Having a look at multiple layers
+
+```{r}
+dist1 = rnorm(1e2)
+dist2 = rlnorm(1e2)
+df = data.frame(dist1, dist2)
+plot = ggplot(df) +
+  geom_histogram(aes(dist1)) +
+  geom_histogram(aes(dist2), fill = "blue")
+plot
+MakeAccessibleSVG(plot)
+```
+
+It doesnt seem to be working properly for multiple layers however I dont
+think they are working for any geom.
+
+For now I will leave it so that it works and then once multiple layers
+have bee implemented then I can add in better bar descriptions.
+
+### geom_points
+
+12/01/2023
+
+#### Current status
+
+Currently geom points are not supported at all.
+
+However this should be too hard to do as the structure can be very
+similar to that of geom_line
+
+#### Plan
+
+```{r}
+plot = attenu |>
+  ggplot(aes(x=dist, y = accel, color = mag)) +
+  geom_point()
+plot
+MakeAccessibleSVG(plot, cleanup = F)
+```
+
+As there are lots of points summarizing is going to have to happen. I
+think that I will do it in a similar way as the geom_line
+
+It will be broken into 5 segments. Each segment will be given the mean,
+sd and density so that users can understand the trend in the plot. As
+most scatter plots are used for understanding relationships this is what
+it should be tailored to.
+
+I am going to check with Jonathan if he thinks that this is the best way
+to summarise it.
+
+He has somewhat agreed that mean sd and number of points is a good
+summary of the information.
+
+#### Getting grob information
+
+```{r}
+plot
+grid.force()
+pointGrobs <- grid.grep(gPath("panel", "panel-1", "geom_point"), grep = TRUE, global = TRUE)
+pointGrob = pointGrobs[[1]]
+
+```
+
+This is actuallly pretty straight forward.
+
+Having a look at the svg lets me see the structure of the grid object
+and get the paths.
+
+#### Structure information
+
+```{r}
+plot_struct = .VIstruct.ggplot(plot)
+```
+
+#### Summary
+
+There is starting to become a very clear pattern to the summarisation of
+the data.
+
+I think that this could be extracted out to a function that uses s3
+classes and dispatch for it to be a clean solution.
+
+This will have to wait untill I implement a third geom.
+
+So far though everything has been standard expect the mapply function.
+
+#### Adding it to the XML
+
+This is where the dificult lies.
+
+I am going ot have a look at a comparable single line graph to see what
+hte xml looks like.
+
+I am not just going to use the AddXMLPoint because it has alot of
+surplus code that I am not sure what all of it does.
+
+```{r}
+ts_plot = TimeSeriesPlot(Nile)
+ts_plot
+MakeAccessibleSVG(ts_plot, cleanup=F)
+```
+
+This seems to show that it is relatively similar.
+
+However for the line xml it has a extra annotation that it is part of
+the whole poly line.
+
+##### Problem
+
+There seems to be a problem where it firstly go to the end of the 5
+summarized points. It also doesn't zoom in or highlight the right points
+in the svg on the html page.
+
+I am going to also get up a bar plot to see what that XML looks like
+
+```{r}
+hist = ggplot(mtcars, aes(x = mpg)) +
+  geom_histogram()
+MakeAccessibleSVG(hist , cleanup=FALSE)
+```
+
+There really doesn't seem to be an easy solution.
+
+##### Solution
+
+I will try to use the AddXMLPoint and see if it works.
+
+It works at atleast having the right description it still however does
+not show the right information on the screen.
+
+I have added in a fake ID name that does not correlate to any svg item.
+This seems to fix the problem.
+
+However now it doesnt highlight the right elements at all in the svg.
+
+##### X Problem
+
+There is also a ongoing problem of there not being any of the svg
+displayed at all.
+
+It would be best to have a group of active items. However I am not sure
+how this would edone.
+
+All in all I need to make it display the points and then keep the whole
+graph in view for the time being.
+
+This is a similar effect to that of the AddXML line.
+
+##### Solution
+
+I will have a look to see if it is anything to do with the colours of
+the graph
+
+```{r}
+noColorPoints = ggplot(mtcars, aes(x= disp,  y = wt)) +
+  geom_point()
+MakeAccessibleSVG(noColorPoints, cleanup = F)
+```
+
+There is clearly something wrong with the display of the svg.
+
+This is the most important task to get the point svg displaying.
+
+Because if we remove the js and the xml from the webpage then the svg
+displays correctly.
+
+Adding in the all ofthe active geomPoint tags in the children and
+components of the annotation does not work nor does adding in the passic
+geom point to the component section of each annotation.
+
+I have tested it with the add xml point and it just doesnt work. Even
+wtih all of those differences.
+
+I am going ot try it once more but jsut with that no colour plot above.
+
+I am using the addXMLPOint function and then manually added in all the
+points into the children and component section of the graph annotaiton.
+
+This has not helped and has not made the svg graph visible.
+
+After removing just the xml from the html page I will need to look at
+the differences between the xml for the no colors and for the tsplot.
+
+After manually correcting all of the id references in the xml it still
+isnt working.
+
+I am going to have to come back to this one.
+
+At this point I would say that it works from a audio perspective but the
+visuals dont show up.
+
+I will move on and come back to this challenge.
+
+19/01/2023
+
+I have revisited it and I tihnk it will go under a similar category as
+before and I will wit for Joanthans reply to see if he can help.
+
+### Geom_Smooth
+
+16/01/2023
+
+#### Current status
+
+The current status of geom_area is that it just doesn't work at all.
+
+I will fix that by adding the support for it.
+
+#### Plan
+
+I would expect that the area is going to be most used in the geom_smooth
+layer.
+
+More generally it will be used to see all sorts of intervals.
+
+This is what it will look like if it is a geom_smooth function
+
+```{r}
+smooth_area = ggplot(mtcars, aes(x = disp, y = wt)) +
+  geom_smooth()
+smooth_area_b = ggplot_build(smooth_area)
+smooth_area
+```
+
+We are just given the strucutre of the object created by the VI.strucut
+command
+
+```{r}
+smooth_area_struct = .VIstruct.ggplot(smooth_area)
+```
+
+I think that to display the needed information we would divvy it up into
+5 sections.
+
+To do this we could create straight lines in these intervals and tell
+the slope as well as the average width of Se interval if it is present.
+
+So the plan is
+
+-   Adding basic information about the layer
+
+-   Summarizing it into the lines
+
+-   Add Xml
+
+#### Adding basic information
+
+First up is going to basic information.
+
+I will need to see a svg of the graph to owrk on this.
+
+```{r}
+SVGThis(smooth_area)
+```
+
+It is a little different because there is more than one type of grob.
+There is the polygon which is the interval then there is the line which
+is for the center as well as two other lines which are associated with
+the polygon in the svg but not sure wha they do. I am usng a svg viewer
+to play around with it and figure it out.
+
+```{r}
+pdf(NULL)
+smooth_area
+grid.force()
+smoothGrobs <- grid.grep(gPath("panel", "panel-1", "geom_smooth", "geom_ribbon", "GRID"), grep = TRUE, global = TRUE)
+invisible(dev.off())
+
+```
+
+It seems that from this there is easy to get access to this. However
+this may not work when there are mutliple layers. Heck it is almost
+guranteed not to work when there are multiple layers.
+
+```{r}
+MakeAccessibleSVG(smooth_area)
+```
+
+#### Summarising
+
+I will need to summarises the median slope and the range of slopes for
+all the different lines.
+
+Then for the CI I will need to find out the average area.
+
+Luckily I have already done this for the linesGeom
+
+```{r}
+summarisedSections = 5
+breaks <- seq(min(data$x), max(data$x), length.out = summarisedSections + 1)
+mins <- breaks[1:(summarisedSections)]
+maxs <- breaks[2:(summarisedSections + 1)]
+if (!data$ci) {
+  data$ymin = 0
+  data$ymax = 0
+}
+summarisedData <- mapply(
+  function(min, max, data) {
+    data |>
+      filter(x < max, x >= min) |>
+      mutate(startX = x, endX = lead(x), startY = y, endY = lead(y)) |>
+      mutate(CIWidth = ymax - ymin) |>
+      drop_na() |>
+      mutate(slope = (startY - endY) / (startX - endX)) |>
+      summarise(min = min(slope), max = max(slope), median = median(slope), avg_width = mean(CIWidth)) |>
+      as.list()
+  },
+  mins, maxs, list(data = data),
+  SIMPLIFY = FALSE
+)
+```
+
+But will this work with a geom_smooth without a Ci
+
+```{r}
+smooth_area_noCI = ggplot(mtcars, aes(x = disp, y = wt)) +
+  geom_smooth(se = FALSE)
+
+smooth_area_noCI_struct = .VIstruct.ggplot(smooth_area_noCI)
+```
+
+I have added a extra line which will populate ymin and ymax if they are
+empty because there is not a ci.
+
+This should work with both ci and non ci.
+
+#### Adding XML
+
+I am just going to do the same as before with the AddXMLTestAdd.
+
+I am also thinking that maybe it is best for this to be using a whiskers
+template. I can also see that these functions can be extracted.
+
+There can definitely be less repetition. Once I get the basics of point
+working I will move onto cleaing up the code. I might start with some
+nested functions and move on from there.
+
+```{r}
+MakeAccessibleSVG(smooth_area, cleanup = F)
+```
+
+Simply using the addXMLTestAdd has worked.
+
+However I might want to try to get the shaded area in there as well.
+
+I will try manually editing the XML by adding in a component of the
+polygon.
+
+I really do still need to leanr about xml because I dont know what to
+add to make the CI visible.
+
+Also the title is stiill being added.
+
+I am goinjg to create my own Add XML: function fro the points.
+
+Then as I see some better ways of extracting it I will do that.
+
+After creating a little function like this:
+
+    .AddXMLSmooth <- function(root, position = 1, id = NULL, speech, speech2 = speech) {
+      annotation <- .AddXMLAddAnnotation(root, position = position, id = paste(id, 1, position, sep = "."), kind = "active")
+      XML::addAttributes(annotation$root, speech = speech, speech2 = speech)
+      
+      ## Adding in the whole line as a passive component of all of the sections so
+      ## That the whole line is always highlighted.
+      .AddXMLAddAnnotation(root, position = position, id = paste0(id, ".1"), kind = "passive") |>
+        list() |>
+        .AddXMLAddComponents(annotation, node = _)
+      
+      return(invisible(annotation))
+    }
+
+I can see how the add XML points works and that it could probably be
+made alot simpler.
+
+I think I can do the same process and add in the polygon.
+
+Trying something like this
+
+    if (!is.null(CI_ID))
+
+        .AddXMLAddAnnotation(root, position = position, id = paste0(CI_ID, ".1"), kind = "passive") |>
+
+        list() |>
+
+        .AddXMLAddComponents(annotation, node = _)
+
+Where CI_ID would be the id of the polygon or of the geom_ribbon.
+
+Its not seeming to be so easy.
+
+However I think that I can take the same idea used for the whole line
+back into the points and might be able to get he points displayed.
+
+It didnt help get all of the points displayed. But I will come back and
+have a look now at the polygon.
+
+This really needs to be displayed.
+
+It seems to be there is something in the js that is hidding hte element
+if it is not in the xml.
+
+I dont think that it needs to be added to the annotation of each item
+but rather to the graph as a whole.
+
+After playing with the svg polygon tag it seems that it could be related
+to the svg not being picked up properly by the xml and js.
+
+It seems that by just changing the stroke opacity we see that adding it
+as a extra annotation the same as the line works for what we want. It
+just doesn't display the are as we would expect it to.
+
+I will try to add the other poly lines in and see if it helps.
+
+It makes a negligible difference.
+
+I will have to come back to this tomorrow.
+
+This might be something that is even worth asking for help.
+
+19/01/2022
+
+It seems that there is something to do with the XML and SVGs not being
+displayed.
+
+I have tried adding them in lots of different ways and think that I will
+send Jonathan an email and see if he knows anyone who could help.
+
+I am also moving on as atleast the main lines shows. Currrently this
+works fine for blind but not low vision people.
+
+### Cleaning up if else tree
+
+I think it will be best to start extracting some of the common features.
+
+Quickly have added the summarize logic into a nested function that an be
+used without two much duplication.
+
+## Adding in Describe and VI to webpage
+
+As discussed with Jonathan I will add in the VI and the Describe outputs
+to the webpage with the SVG
+
+To do this I will add into the template a space for it.
+
+Then I can simply pass the extra information to the render fucntion.
+
+To do this the BrowseSVg will need to know about the plot object. THis
+can easily be added as a parameter.
+
+By quickly adding in the new paramter to the functions and passing
+around the information it has gone alright.
+
+```{r}
+
+plot = ggplot(mtcars, aes(disp, cyl)) +
+  geom_point()
+
+MakeAccessibleSVG(plot, VI_and_Describe = F)
+```
+
+Now I just need it to actually display nicely as there is alot of
+information in the VI that doesn't need to be displayed. Also in the
+describe function it should be correctly structured as well as being
+able to handle multiple layers with ease.
+
+### VI
+
+When a user is navigating throughout the webpage it will be alot easier
+if the text is using proper html not just a chunk of text. Having
+headers gives the user the ability to jump to the bit the are interested
+in.
+
+```{r}
+plot = ggplot(mtcars, aes(x = hp, y = mpg)) +
+  geom_point() +
+  geom_smooth()
+
+plot
+vi = VI(plot)
+
+text = vi$text |> as.list() |> setNames(rep("text", length(vi$text)))
+```
+
+There was a small error with the max point not being included in the
+summarize of the data in AddXMLInternal. I have fixed this up and also
+had to add a ifelse to the point summarising function as you cant have a
+sd of 1 item.
+
+We need to get the VI to printout on one line at a time.
+
+There is also a continued problem of not being able to read the html
+templates easily.
+
+They replace the line breaks with a ,.
+
+I will just to replace the problem wit ha gsub then have to come back
+and fix it properly later.
+
+### Describe
+
+The describe is in the HTML but is not layed out in a useful way.
+
+It is currenlty sjust a blob of text.
+
+First problem is with the line breaks.
+
+The next issue is to get the general, hints etc in separate sections
+with appropriate headers.
+
+This seems to be a problem trying to loop trhough the descirtion list
+that is made.
+
+I think i need to have names for the sublist
+
+```{r}
+rename_test = description |>setNames(rep("", length(description)))
+```
+
+Or maybe have no names this is what is usedin the VI templating
+
+I dont think that it is thisx
+
+It may however be osmething to do with the fact that there are classes.
+
+Thgs hasnt helped either I might test it here and see if I can figure
+out what is goin one
+
+```{r}
+library(whisker)
+
+template <- 
+"This is a test of list
+{{#desc}}
+{{title}}
+and now where is it located
+{{general}} {{RHints}}
+{{/desc}}"
+
+item1 = list(title = "cool", general = "home", RHints = "hah")
+item2 = list(title = "lame", general = "outside", RHints = "hoh")
+descriptions = list(item1, item2)
+
+data = list(desc = descriptions, title = "webpage")
+
+cat(whisker.render(template, data = data))
+```
+
+It could be because of problem with class I will try removing all
+classes.
+
+Looking at the list that is in the code and that above are basically
+identical.
+
+I cant think of what is causing it to not loop through the items
+correctly.
+
+Playing around with the above I believe it is todo with the naming of
+the sublists.
+
+HUZZAH!!!
+
+I had made all the names "" when in fact they should of been NULL.
+
+Now that the names are set to NULL it loops through as you would expect.
+
+One downside is that now I have to add in indicators for the templating
+
+#### Turning layer name into list item
+
+```{r}
+graph = ggplot(mtcars, aes(mpg, wt)) +
+  geom_point() +
+  geom_smooth()
+description = Describe(graph, whichLayer = "all")
+
+test.output = lapply(seq_along(description), function(i) {
+  description[[i]]$name = names(description)[[i]]
+  description[[i]]
+})
+
+test.output = description |> lapply(function(x, n) {
+  x$name = n
+  x
+},
+n = names(description))
+```
+
+Now lastly handle a sinlge description
+
+```{r}
+    Description = Describe(graph, whichLayer = "all") |>
+      lapply(unclass)
+    
+    Description = lapply(seq_along(Description), function(i) {
+      Description[[i]]$name = names(Description)[[i]]
+      Description[[i]]
+    })
+
+```

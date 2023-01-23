@@ -1,0 +1,159 @@
+---
+title: "BrailleR time analysis"
+author: "James Thompson - 21011195"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(BrailleR)
+library(tidyverse)
+library(microbenchmark)
+```
+
+
+To test all the different plots they will be run through a function like this which will return a sighted and blind number
+
+```{r}
+runTests <- function(plot, dataframe) {
+  ggplot =  class(plot)[2] == "ggplot"
+  sightedResult = blindAndSightedTime(plot, FALSE, ggplot)
+  dataframe[nrow(dataframe)+1,] <- c(FALSE, ggplot, sightedResult)
+  blindResult = blindAndSightedTime(plot, TRUE, ggplot)
+  dataframe[nrow(dataframe)+1, ] <- c(TRUE, ggplot, blindResult)
+
+  return(dataframe)
+}
+
+blindAndSightedTime = function(plot, withBrailleR, ggplot=FALSE) {
+  if (!withBrailleR) {
+    GoSighted()
+    result = summary(microbenchmark(capture.output(print(plot))))
+  } else {
+    GoBlind()
+    result = summary(microbenchmark(capture.output(print(plot))))
+  }
+  if (ggplot) {
+    result$expr = class(plot$layers[[1]]$geom)[1]
+  } else {
+    result$expr = class(plot)[2]
+  }
+  
+  return(result)
+}
+```
+
+We will save the results in a dataframe
+```{r}
+# Results data frame
+columns <- c("withBrailleR","ggplot", "expr", "min", "lq", "mean", "median", "uq", "max", "neval")
+results <- data.frame(matrix(nrow = 0, ncol = length(columns))) 
+colnames(results) <- columns
+rm(columns)
+```
+
+# Base plots
+
+```{r}
+d = mtcars
+
+boxplot = boxplot(d)
+
+dotplot = dotplot(d$mpg)
+
+hist = hist(d$mpg)
+
+results = runTests(boxplot, results)
+results = runTests(dotplot, results)
+results = runTests(hist, results)
+
+```
+
+# ggplot
+
+```{r fig.show='hide', warning = FALSE, messages = FALSE}
+
+N <- 1e4
+x <- rnorm(N)
+randomData <- data.frame(x = x, y = rnorm(N, x))
+rm(x,N)
+
+# Hline
+hline <- ggplot(data=randomData, aes(x=x, y=y)) + 
+  geom_hline(yintercept = mean(randomData$y))
+results = runTests(hline, results)
+
+# point
+point = ggplot(data=randomData, aes(x, y)) + 
+  geom_point()
+results = runTests(point, results)
+
+# bar
+data("mpg")
+bar = ggplot(mpg, aes(class)) +
+  geom_bar()
+results = runTests(bar, results)
+
+#line
+data("economics")
+line = ggplot(economics, aes(date, unemploy)) +
+  geom_line()
+results = runTests(line, results)
+
+# boxplot
+boxplot = ggplot(NULL, aes(x=randomData$x)) +
+  geom_boxplot()
+results = runTests(boxplot, results)
+
+# smooth
+smooth = ggplot(randomData, aes(x,y)) +
+  geom_smooth()
+results = runTests(smooth, results)
+
+# ribbon
+ribbon = ggplot(randomData, aes(x,y)) +
+  geom_ribbon(aes(ymin = mean(randomData$y)-10, ymax = mean(randomData$y)+10))
+results = runTests(ribbon, results)
+```
+
+Now that we have all of the data we can then run some analysis on it.
+
+```{r}
+avgRuntime = results |>
+  group_by(withBrailleR) |>
+  summarise(executionTime = mean(median))
+avgRuntime$executionTime[2]/avgRuntime$executionTime[1]
+```
+
+We can see from this that it looks like BrailleR does make a difference.
+It seems to slow down on average `r avgRuntime$executionTime[2]/avgRuntime$executionTime[1]`.
+
+However it is better to compare the increase between each plot type, then average across the lot. This is because the differences can be an order of magnitude different.
+```{r}
+avgIncrease = results |>
+  group_by(withBrailleR) |>
+  mutate(increase = median/lag(median)) |>
+  drop_na() |>
+  ungroup() |>
+  group_by(ggplot) |>
+  summarise(increase = mean(increase))
+avgIncrease
+```
+We can see something funny here where base plots actually run quicker when using BrailleR then without.
+
+The average increase seems to be about 50% for ggplot.
+
+But where does that extra time come from
+```{r}
+GoBlind()
+profvis::profvis({print(hline)}, interval=0.005)
+Sys.sleep(2)
+GoSighted()
+profvis::profvis({print(hline)}, interval=0.005)
+GoBlind()
+profvis::profvis({print(smooth)}, interval=0.005)
+```
+
+We can see that it pretty clean cut that the increase in time comes form VI.ggplot call. This then runs through.
+This means that the results calculated before have some merit to them.

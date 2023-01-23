@@ -1,0 +1,10 @@
+# Preface {-}
+
+This notebook is simply a summary of the work I have done as a summer intern under Jonathan Godfrey at Massey University in 2022/23.
+
+When I came back at the start of 2023 after summer break I decided to move over to bookdown rantehr than just one long rmd file.
+I did this for 2 reasons
+1. It is another learning experience
+2. To give my nots more organisation and stop by really long rmd file from getting out of hand (already over 2000 lines)
+
+This process was relatively simple just had to do some correction to my code so that the rmd would actually render properly. From there I started to do some basic splitting of the sections then got back to work.

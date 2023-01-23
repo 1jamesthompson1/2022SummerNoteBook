@@ -1,0 +1,1296 @@
+# VI commmand and ggplot
+
+## Learning
+
+Deconstructing the process to learn
+
+Just going through the main functions that process a ggplot object to see how it works and what each objective is.
+
+```{r deconstruction}
+threshold = 10
+template = system.file("whisker/VIdefault.txt", package="BrailleR")
+
+g <- ggplot(mtcars, aes(mpg, cyl)) + geom_point()
+
+VIstruct = BrailleR:::.VIstruct.ggplot(g)
+
+preprocessed = list(VIgg = BrailleR:::.VIpreprocess(VIstruct, threshold))
+
+##Preprocess
+
+# .VIpreprocess = function(x, threshold=10) {
+#   if (is.null(x))
+#     return(NULL)
+#   if (x$npanels == 1) 
+#     x$singlepanel = TRUE
+#   if (x$nlayers == 1) 
+#     x$singlelayer = TRUE
+#   if (length(x$panelrows) == 0) 
+#     x$singlerow = TRUE   
+#   if (length(x$panelcols) == 0) 
+#     x$singlecol = TRUE
+#   if (length(x$panelrows) > 0 && length(x$panelcols) > 0) 
+#     x$panelgrid = TRUE
+#   # If samescale then axis labels are at top level
+#   if (!is.null(x$xaxis$xticklabels))
+#     x$xaxis$xtickitems = .listifyVars(list(label=x$xaxis$xticklabels))
+#   if (!is.null(x$yaxis$yticklabels))
+#     x$yaxis$ytickitems = .listifyVars(list(label=x$yaxis$yticklabels))
+# 
+#   for (legendi in 1:length(x$legends)) {
+#     if (!is.null(x$legends[[legendi]]$scalelevels))
+#       x$legends[[legendi]]$scalelevelitems = 
+#         .listifyVars(list(level = x$legends[[legendi]]$scalelevels,
+#                           map = x$legends[[legendi]]$scalemaps))
+#   }
+#   for (paneli in 1:x$npanels) {
+#     # Othewise they're within the panels
+#     if (!is.null(x$panels[[paneli]]$xticklabels))
+#       x$panels[[paneli]]$xtickitems = .listifyVars(list(label=x$panels[[paneli]]$xticklabels))
+#     if (!is.null(x$panels[[paneli]]$yticklabels))
+#       x$panels[[paneli]]$ytickitems = .listifyVars(list(label=x$panels[[paneli]]$yticklabels))
+#     for (layeri in 1:x$nlayers) {
+#       layer = x$panels[[paneli]]$panellayers[[layeri]]
+#       typeflag = paste0("type",layer$type)
+#       layer[[typeflag]] = TRUE
+#       n = layer$n
+#       if (!is.null(n)) {
+#         if (n > 1) 
+#           layer$s = TRUE
+#         if (n > threshold) {
+#           layer$largecount = TRUE
+#         } else {
+#           if (layer$type == "line") {  # Lines are special, items are within groups
+#             for (i in 1:length(layer$lines)) {
+#               layer$lines[[i]]$linenum = i
+#               npoints = nrow(layer$lines[[i]]$scaledata)
+#               layer$lines[[i]]$npoints = npoints
+#               if (npoints > threshold)
+#                 layer$lines[[i]]$largecount = TRUE
+#               else 
+#                 layer$lines[[i]]$items = .listifyVars(layer$lines[[i]]$scaledata)
+#             }
+#           }
+#           else {
+#             layer$items = .listifyVars(layer$scaledata)
+#           }
+#         }
+#       }
+#       x$panels[[paneli]]$panellayers[[layeri]] = layer
+#     }
+#   }
+#   return(x)
+# }
+
+x = VIstruct
+
+layer = x$panels[[1]]$panellayers[[1]]
+typeflag = paste0("type",layer$type)
+layer[[typeflag]] = TRUE
+
+##Texify
+#
+# .VItextify = function(x, template=system.file("whisker/VIdefault.txt", package="BrailleR")) {
+#   temp = read.csv(template,header=FALSE, as.is=TRUE)
+#   templates = as.list(gsub("\n", "", temp[,2]))
+#   names(templates) = temp[,1]
+#   result = list()
+#   for (i in 1:length(x)) {
+#     if (is.null(x[[i]])) {
+#       result[[i]] = character(0)
+#     } else {
+#       render = whisker::whisker.render(templates[names(x[i])], x[[i]], partials=templates)
+#       result[[i]] = as.vector(strsplit(render, "<br>", fixed=TRUE)[[1]])
+#     }
+#   }
+#   names(result) = names(x)
+#   return(result)
+# }
+x = preprocessed
+temp = read.csv(template, header = FALSE, as.is=TRUE)
+templates = as.list(gsub("\n", "", temp[,2]))
+names(templates) = temp[,1]
+result = list()
+for (i in 1:length(x)) {
+  if (is.null(x[[i]])) {
+    result[[i]] = character(0)
+  } else {
+    render = whisker::whisker.render(templates[names(x[i])], x[[i]], partials=templates)
+    result[[i]] = as.vector(strsplit(render, "<br>", fixed=TRUE)[[1]])
+  }
+}
+
+render = whisker::whisker.render(templates[names(x[1])], x[[1]], partials=templates)
+
+VIgraph = list(VIgg=VIstruct, text=text, threshold=threshold, template=template)
+class(VIgraph) = "VIgraph"
+```
+
+## geom_ribbon
+
+Here is are some example of the basic output from geom_ribbon and BrailleR
+
+```{r ribbonNotWorkingExample}
+data("LakeHuron")
+d <- data.frame(year = 1875:1972, level = LakeHuron)
+##full x range and constant y range
+g1 <- ggplot(d, aes(x = year, y = level)) +
+  geom_ribbon(aes(ymin = 500, ymax = 600), fill="grey100") +
+  geom_line()
+g1
+
+##full x range and non constant y range
+g2 <- ggplot(d, aes(x = year, y = level)) +
+  geom_ribbon(aes(ymin = level - 1 * (year-1874)*0.01, ymax = level + 1 * (year-1874)*0.01)) + 
+  geom_line()
+g2
+
+##Non constant x range and full y range
+g3 <- ggplot(d, aes(x = year, y = level)) +
+  geom_ribbon(aes(xmin= year-10 * level *0.01, xmax = year+10), fill="grey10") +
+  geom_line()
+g3
+
+##constant x range and full y range
+g4 <- ggplot(d, aes(x = year, y = level)) +
+  geom_ribbon(aes(xmin= 1870, xmax = 1920), fill="grey10") +
+  geom_line()
+g4
+
+
+g1_build <- ggplot_build(g1)
+g2_build <- ggplot_build(g2)
+g3_build <- ggplot_build(g3)
+```
+
+## geomSmooth
+
+Adding a percentage number to the geom smooth would help understand the overall effect of the CI inside the graph
+
+```{r areshaded function}
+.getGGShadedAreaTest = function(x, xbuild, layer) {
+  data = xbuild$data[[layer]]
+  
+  dataLength = length(data$ymax)
+  
+  if (dataLength > 10000) {
+    selectedIndices = sort(sample(1:dataLength, 10000))
+    data$ymax = data$ymax[selectedIndices]
+    data$ymin = data$ymin[selectedIndices]
+    data$x = data$x[selectedIndices]
+  }
+  
+  #Width of the shaded area
+  width = data$ymax - data$ymin
+  
+  #Get the length of each shaded area
+  #I believe they might be constant
+  x_values = sort(data$x)
+  distances = rep(0, length(x_values))
+  for (i in 1:(length(x_values)-1)) {
+    distances[i] = x_values[i+1]-x_values[i]
+  }
+  
+  #Length of x and y axis
+  xaxis = xbuild$layout$panel_scales_x[[1]]$range$range
+  yaxis = xbuild$layout$panel_scales_y[[1]]$range$range
+  
+  #Calculate area approximations
+  shadedArea = sum(abs(distances) * abs(width))
+  totalArea = (xaxis[2] - xaxis[1]) * (yaxis[2] - yaxis[1])
+  
+  #Return percent
+  return(shadedArea / totalArea )
+}
+```
+
+Here is it working in action
+
+```{r geomSmooth}
+set.seed(2022)
+x = rnorm(1e4)
+y = rnorm(1e4,x, 10)
+g <- ggplot(data.frame(x, y), aes(x, y)) +
+  geom_smooth()
+g
+# g_build <- ggplot_build(g)
+# 
+# .getGGShadedAreaTest(g, g_build, 1)
+```
+
+## shadedArea for geom ribbon
+
+Doing some profiling of the .getGGshadedArea
+
+After adding the shaded area to geom this is what it would look like now
+
+```{r}
+N = 1e3
+
+x = rnorm(N, 0, 10)
+y = rnorm(N, x, 1)
+
+shadedTest <- ggplot(NULL, aes(x = x, y = y)) +
+  geom_ribbon(aes(ymin = y - 10, ymax = y + 10))
+
+shadedTest
+
+rm(x)
+rm(y)
+```
+
+That previous test works fine. As the limits are y bounds.
+
+However it fails when you are working with xbounds. This is because the .getGGShdaedArea is hardwired to get the ybounds and compare them to the x axis. Meaning that this plot does not get explained correctly.
+
+```{r}
+##Non constant x range and full y range
+g3 <- ggplot(d, aes(x = year, y = level)) +
+  geom_ribbon(aes(xmin= year-10 * level *0.01, xmax = year+10), fill="grey10") +
+  geom_line()
+g3
+```
+
+Having a look at the insides it might be just as easy to have a extra parameter and switch the axis and the bound references accordingly.
+
+Like so:
+
+      if (useX) {
+        width = data$ymax - data$ymin
+        axis_values = sort(data$x)
+      } else {
+        width = data$xmax - data$xmin
+        axis_values = sort(data$y)
+      }
+
+```{r}
+g3_build <- ggplot_build(g3)
+data <- g3_build$data[[1]]
+
+width = data$xmax - data$xmin
+axis_values = sort(data$y)
+```
+
+## Geom area
+
+The area geom is just a special case of geom_ribbon where hte y is fixed at zero and ymax is replaced with y
+
+```{r}
+data("LakeHuron")
+huron <- data.frame(year = 1875:1972, level = as.vector(LakeHuron))
+area = ggplot(huron, aes(x=year, y=level)) +
+  geom_area(aes(y=level))
+area
+
+area_build = ggplot_build(area)
+```
+
+By just adding in a or statement into the .buildlayers() ifelse tree we can treat the geom_area as a geom_ribbon.
+
+There seems to be something odd where the first and last ymax is 0.
+
+Trying geom_area with different data
+
+```{r}
+data("diamonds")
+area2 =ggplot(diamonds, aes(x=carat, y=price)) + 
+  geom_area(aes(y=price))
+area2
+
+area2_build = ggplot_build(area2)
+```
+
+It does seems to be that geom_area always has a trailing and leading 0 in the yMax vector.
+
+## Expand limits
+
+There is a problem where this bit of code doesn't give out the text you would expect. It is thought that it is because it creates a new weird layer.
+
+```{r}
+expLim = ggplot(BOD, aes(x = demand, y = Time)) +
+  geom_line() +
+  expand_limits(x=c(15, 23, 6), y=c(30))
+expLim
+
+expLim_build = ggplot_build(expLim)
+```
+
+It seems that it does create a new layer of class GeomBlank.
+
+Simply adding in a new branch to the ifelse statement which uses geom_blank. This will mean that the various geom that effect the graph but aren't plotting anything show nothing in the text printout.
+
+After trying that out it was suggested by J.Godfrey that actually trying to show the effect of the expand limits would be better.
+
+As when you add values to be included in the graph it will either expand the graph or change it and if it expands it you could find out by how much.
+
+Looking at the example above we could simply grab the x and y values from the plot in built plot. Then calculate the effect caused by the limits. This has worked and will create soemthing like this:
+
+> This is an untitled chart with no subtitle or caption. It has x-axis 'demand' with labels 10.0, 12.5, 15.0, 17.5 and 20.0. It has y-axis 'Time' with labels 0, 5, 10, 15 and 20. It has 2 layers. Layer 1 is a set of 1 line. Line 1 connects 6 points, at (8.3, 1), (10.3, 2), (15.6, 5), (16, 4), (19, 3) and (19.8, 7). Layer 2 is a expand limits, and increasing y axis by 367%.
+
+from:
+
+    expLim = ggplot(BOD, aes(x = demand, y = Time)) +
+      geom_line() +
+      expand_limits(y=c(15, 23, 6))
+    expLim
+
+However the problem now rises with single variable plots like histogram and such.
+
+```{r}
+data <- rnorm(100)
+d <- data.frame(x=data)
+hist = ggplot(d, aes(y = x)) +
+  geom_histogram() +
+  expand_limits(x=c(15, 23, 6))
+hist
+
+hist_build = ggplot_build(hist)
+```
+
+I have solved it by rather the looking for original data instead going into each layer and grabbing it max and min of x and y. Then once the overall min and max is found for each axis the effect can be found. The one catch is that not all plots y and x values have there max in it!
+
+currently it looks something like this:
+
+          for (layerNum in 1:layerCount) {
+            if (layerNum == layeri) break
+            currentLayer = xbuild$data[[layerNum]]
+            xMin = min(currentLayer$x)
+            xMax = max(currentLayer$x)
+            yMin = min(currentLayer$y)
+            yMax = max(currentLayer$y)
+            if (layerNum == 1) {
+              xRange = c(xMin, xMax)
+              yRange = c(yMin, yMax)
+            } else {
+              if (xMin < xRange[1]) xRange[1] = xMin
+              if (xMax > xRange[2]) xRange[2] = xMax
+              if (yMin < yRange[1]) yRange[1] = yMin
+              if (yMax > yRange[2]) yRange[1] = yMin
+            }
+          }
+
+However I can change it so that to find the xmax and xmin etc etc it looks through all of the potentnial places the max might be. However there may be problems with references being null here are some test graphs
+
+```{r}
+point = ggplot(economics, aes(x=psavert, y=uempmed )) + 
+  geom_point() +
+  expand_limits(y=30, x=3)
+point
+point_b = ggplot_build(point)
+
+hline = ggplot(economics, aes(x=psavert, y=uempmed )) + 
+  geom_hline(yintercept = 8) +
+  expand_limits(y=8.11, x=3)
+hline
+hline_b = ggplot_build(hline)
+
+bar = ggplot(InsectSprays, aes(x=count)) +
+  geom_bar() +
+  expand_limits(x=30, y=c(-1,5))
+bar
+bar_b = ggplot_build(bar)
+
+col = ggplot(InsectSprays, aes(x=spray,y=count)) +
+  geom_col() +
+  expand_limits(x=30, y=c(-1,5))
+col
+col_b = ggplot_build(col)
+
+line = ggplot(economics, aes(date, unemploy)) + 
+  geom_line() + 
+  scale_y_continuous(trans='log10') + 
+  expand_limits(y=c(-2,45), x=as.Date("1960-05-05"))
+line
+line_b = ggplot_build(line)
+
+boxplot = ggplot(mpg, aes(class, hwy)) + 
+  geom_boxplot() + 
+  expand_limits(y=50)
+boxplot
+boxplot_b = ggplot_build(boxplot)
+
+smooth = ggplot(mpg, aes(displ, hwy)) +
+  geom_smooth() +
+  expand_limits(x=0)
+smooth_b = ggplot_build(smooth)
+smooth
+
+ribbon = ggplot(data.frame(year = 1875:1972, level = as.vector(LakeHuron)), aes(year)) + 
+  geom_ribbon(aes(ymin=0, ymax=level)) +
+  expand_limits(y = 700)
+ribbon_b = ggplot_build(ribbon)
+ribbon
+
+area = ggplot(
+    data.frame(year = 1875:1972, level = as.vector(LakeHuron)),
+    aes(year)) + 
+  geom_area(aes(y = level)) +
+  expand_limits(y = c(700,1900), x=1500) + 
+  scale_y_continuous(trans="log10")
+area_b = ggplot_build(area)
+area
+```
+
+After doing some of the tests I found out that there are more like yintercept and such.
+
+This means that rather then checking them in hard code instead I have added a for loop to chekc them so I can easily add more locations as they come up.
+
+This works well
+
+            currentLayer = xbuild$data[[layerNum]]
+            
+            yLocations = c("y", "ymin", "ymax", "yintercept")
+            xLocations = c("x", "xmin", "xmax", "xintercept")
+            xMin = NULL
+            for (loc in xLocations) {
+              if (!is.null(currentLayer[[loc]])) {xMin = min(min(currentLayer[[loc]]), xMin, na.rm=T)}
+            }
+            xMax = NULL
+            for (loc in xLocations) {
+              if (!is.null(currentLayer[[loc]])) {xMax = max(max(currentLayer[[loc]]), xMax, na.rm=T)}
+            }
+            
+            yMin = NULL
+            for (loc in yLocations) {
+              if (!is.null(currentLayer[[loc]])) {yMin = min(min(currentLayer[[loc]]), yMin, na.rm = T)}
+            }
+            
+            yMax = NULL
+            for (loc in yLocations) {
+              if (!is.null(currentLayer[[loc]])) {yMax = max(max(currentLayer[[loc]]), yMax, na.rm=T)}
+            }
+
+Execept for one cavet. Is that geom_hline forexample wont have anything but a yintercept.
+
+To fix this i have had to add some null chekcs as well as changing the getIncrease so that it can deal will 0 length ranges
+
+### Changing scale
+
+#### solution
+
+Another problem seems to be with changing the scale. It happens when you do a log transformation but apply a limit which is negative.
+
+To resolve this I check the bounds:
+
+    bounds = lapply(bounds, (function(element) {
+      if (!is.na(element)) {
+        element
+      } else {
+        NULL
+      }
+      }))
+
+removing any bounds that are NA.
+
+#### problem
+
+is.na(element) will cause a error if the element is already null.
+
+#### solution
+
+Simple fix just adding in an extra is.null check before the is.na.
+
+### Warning about length in coercin
+
+It is coming up with a warning: Warning: 'length(x) = 2 \> 1' in coercion to 'logical(1)'
+
+This is due to having multiple bounds and trying to pass it through one is.na statment.
+
+#### solution
+
+I can put it through another to lapply to actually look at all the elements and change them accordingly.
+
+#### problem
+
+It comes out with a list in the interior lapply
+
+#### solution
+
+Quite simple fix as I just had to unlist the return value
+
+## Geom bar and number of bars
+
+This is a predefined issue here [issue 35](https://github.com/ajrgodfrey/BrailleR/issues/35).
+
+Here is the first given example
+```{r}
+hist = ggplot(InsectSprays, aes(x=count)) +
+  geom_histogram(aes(fill=spray), bins=5)
+hist
+```
+It seems to me be because it isnt actually counting how many bar there are. Instead it is counting how many there could be.
+
+```{r}
+hist_b = ggplot_build(hist)
+```
+
+After looking at the build data it seems to be that it could be quite effective to use x min and max to count the number of bars. This would be regardless of count.
+
+### First solution
+
+```{r}
+getNumOfBars1 = function(build) {
+  layer = build$data[[1]]
+  xmin = layer$xmin
+  xmax = layer$xmax
+  widths = vector()
+  for (i in 1:length(xmin)) {
+    widths[length(widths)+1] = paste(toString(xmin[i]), " to ", toString(xmax[i]))
+  }
+  
+  length(unique(widths))
+}
+getNumOfBars1(hist_b)
+```
+This seems to work in this case. It wont be able to handle when the axis is flipped but this could be dealt with accordingly.
+
+```{r}
+data <- data.frame(
+quarter=c("Q1", "Q1", "Q2", "Q2", "Q3", "Q3", "Q4", "Q4"),
+product=c("A", "B", "A", "B", "A", "B", "A", "B"),
+profit=c(10, 11, 12, 11, 13, 15, 16, 18)
+)
+
+hist2 = ggplot(data, aes(x = quarter, y = profit)) +
+  geom_bar(stat = "identity")
+hist2
+hist2_b = ggplot_build(hist2)
+getNumOfBars1(hist2_b)
+```
+
+My first solution seems to work with the two given examples
+
+#### Flipped axis
+Now it needs to work when the plot looks something like this
+
+```{r}
+hist_flipped = ggplot(InsectSprays, aes(y=count)) +
+  geom_histogram(aes(fill=spray), bins=5)
+hist_flipped
+hist_flipped_b = ggplot_build(hist_flipped)
+```
+
+It seems that the same solution can work here all we need to do is get the ymin and maxs rather then the 
+This can be resolved by looking at the flipped axis aes.
+
+THis will be true when the bars are horizontal
+### Second solution
+
+```{r}
+getNumOfBars2 = function(layer) {
+  #Vertical bars
+  if (sum(layer$flipped_aes == T) == 0) {
+    min = layer$xmin
+    max = layer$xmax
+  #Horizontal bars
+  } else if (sum(layer$flipped_aes == T) == length(layer$count)) {
+    min = layer$ymin
+    max = layer$ymax
+  }
+  widths = vector()
+  for (i in 1:length(min)) {
+    widths[length(widths)+1] = paste(toString(min[i]), " to ", toString(max[i]))
+  }
+  length(unique(widths))
+}
+```
+
+The flipped_aes in the build object will determine which is used as long as this is accurate then the orientation is accurate.
+
+```{r}
+getNumOfBars2(hist_flipped_b$data[[1]])
+```
+
+This seems to work quite well.
+I will intergrate it now into the VIMethod.
+Here are some tests of quite a few different types of geom_bar.
+
+Bar tests
+```{r}
+simple <- ggplot(mpg, aes(class)) +
+  geom_bar()
+simple
+
+simple_flipped = ggplot(mpg) +
+  geom_bar(aes(y = class))
+simple_flipped
+
+fill_colour = ggplot(mpg, aes(class)) +
+  geom_bar(aes(fill = drv))
+fill_colour
+
+fill_colour_flipped = ggplot(mpg, aes(y = class)) +
+ geom_bar(aes(fill = drv), position = position_stack(reverse = TRUE))
+fill_colour_flipped
+```
+
+Column tests
+```{r}
+df <- data.frame(trt = c("a", "b", "c"), outcome = c(2.3, 1.9, 3.2))
+simple = ggplot(df, aes(trt, outcome)) +
+  geom_col()
+simple
+
+df <- data.frame(x = as.Date(c("2020-01-01", "2020-02-01")), y = 1:2)
+# Columns centered on the first day of the month
+ggplot(df, aes(x, y)) + geom_col(just = 0.5)
+
+ggplot(df, aes(x, y)) + geom_col(just = 1)
+```
+
+Histogram test
+```{r}
+simple = ggplot(diamonds, aes(carat)) +
+  geom_histogram()
+simple
+
+binwidth = ggplot(diamonds, aes(carat)) +
+  geom_histogram(binwidth = 0.01)
+binwidth
+
+setBins = ggplot(diamonds, aes(carat)) +
+  geom_histogram(bins = 200)
+setBins
+
+simple_flipped = ggplot(diamonds, aes(y = carat)) +
+  geom_histogram()
+simple_flipped
+
+bar_hist = ggplot(diamonds, aes(carat)) +
+  geom_bar() +
+  scale_x_binned()
+bar_hist
+
+fill = ggplot(diamonds, aes(price, fill = cut)) +
+  geom_histogram(binwidth = 500)
+fill
+```
+
+# Differentiate betweeen geom_point and geom_jitter
+29/11/2022
+This seems to be that geom_point doesnt always show that many points as they may overlap.
+```{r}
+point = ggplot(seals, aes(x=lat, y=delta_lat)) +
+  geom_point() + expand_limits(x=c(29,50.5))
+point_b = ggplot_build(point)
+point
+
+jitter = ggplot(seals, aes(x=lat, y=delta_lat)) +
+  geom_jitter() + expand_limits(x=c(29,50.5))
+jitter_b = ggplot_build(jitter)
+jitter
+```
+
+This is a good example because there lots of points here but we cant really see all 1100.
+
+## solution 1
+
+We can maybe summarise it because we can only see so many points
+
+This would be that there are 1100 points plotted but we can see 800 individual points.
+
+I think that the way to do that would be to have the pltos  put into a grid.
+
+So based on the range of the axis we can get how much we should roudn the points.
+
+```{r}
+getIndividualPoints = function(build, layeri) {
+  roundedPoints = list()
+  for (axis in c('x', 'y')) {
+    data = build$data[[layeri]][axis]
+    range = max(data) - min(data)
+    avgPointSize = mean(build$data[[layeri]]$size)
+    multi = (1/50) * (avgPointSize/1.5) * range
+    roundedPoints[axis] = multi * round(data/multi)
+  }
+  data.frame(roundedPoints) %>% distinct
+}
+pointIndividual = getIndividualPoints(point_b, 1)
+jitterIndividual = getIndividualPoints(jitter_b, 1)
+```
+
+#### Changing with point size
+
+However this should also be influenced by how big the points are.
+
+```{r}
+point_small = ggplot(seals, aes(x=lat, y=delta_lat)) +
+  geom_point(size=0.5)
+point_small_b = ggplot_build(point_small)
+point_small
+
+point_big = ggplot(seals, aes(x=lat, y=delta_lat)) +
+  geom_point(size=3)
+point_big_b = ggplot_build(point_big)
+point_big
+
+pointBigIndividual = getIndividualPoints(point_big_b, 1)
+pointSmallIndividual = getIndividualPoints(point_small_b, 1)
+```
+
+This can work but I think that the effect is too large.
+
+I am not sure how to do this.
+
+I have the grid working and it summarises it but it changes it just seems that it is too much of an effect it doesn't replicate what a sighted user would think.
+
+```{r}
+point_big = ggplot(midwest, aes(area, poptotal)) +
+  geom_point(size = 3)
+point_big
+point_big_b = ggplot_build(point_big) 
+load("roundedPoints.rData")
+ggplot(rounded, aes(x,y)) + geom_point(size=3, alpha=0.5)
+```
+In this plot here I can see about 81 points.
+That is from me manually counting.
+```{r}
+point_small = ggplot(midwest, aes(area, poptotal)) +
+  geom_point()
+point_small
+point_small_b = ggplot_build(point_small)
+load("roundedPoints.rData")
+ggplot(rounded, aes(x,y)) + geom_point(size=0.5)
+```
+But when they are small I get about 151.
+
+In both these cases the getIndividualPoints gets it wrong.
+For large points it under estimates and for small points it over estimates.
+
+That was with `multi = (1/50) * (avgPointSize/1.5) * range`
+
+Lets look at it with a plot
+```{r}
+x = seq(from=0.5, to=3, length.out=20)
+y = (1/100) * (x/1) * 20
+plot(x,y, ylim=c(0,1))
+```
+Maybe something like that would work better
+
+```{r}
+getIndividualPoints = function(build, layeri) {
+  roundedPoints = list()
+  for (axis in c('x', 'y')) {
+    data = build$data[[layeri]][axis]
+    range = max(data) - min(data)
+    avgPointSize = mean(build$data[[layeri]]$size)
+    #This will get the width of each cell in the grid
+    multi =  (avgPointSize) * ((1/100) * range)
+    roundedPoints[axis] = multi * round(data/multi)
+  }
+  data.frame(roundedPoints) |> distinct() |> nrow()
+}
+```
+
+I think that something like this works.
+
+I will try to implement it into BrailleR now.
+
+The implementation has gone alright.
+However I am still not convinced that it does a good job of summarising how many points can be seen.
+
+What can bee seen above is that it is either over estimating or under estimating the number of pointsthat can be seen.
+
+We need to come up with a formula that takes the range and avgSize and comes up with how wide the point will be in the scale of the plot.
+
+Once we have this formula we can then easily turn the points into a grid and find out how many can be seen.
+
+#### Formula for width in scale of axis
+
+What we have at the moment is that width of grid cell is
+
+$$w = \frac{s*r}{150}$$
+Now we know that is likely ot be in the size of (0,50] where as range is somewhat unbounded. This is because it is reliant on being in the scale of the axis.
+
+##### Width as percent of range
+However what if we tried to get the width as a percent of the range?
+
+I think that it would be possible. If we are given a size and a range then we could find out what the width percent would be.
+
+Going to ask SO and see if anywhere there has input as to what might be able to be done.
+
+There hasnt been any input from stack overflow.
+
+##### Plotting and manualy finding out
+This is going to be done in another file called dev.size test as it will take up alot of space.
+
+All of that work has created a model that can now be used to predict the numbers.
+
+#### New Formula with model
+
+now that we have the model we can practice using it in a fomrula
+
+it gives us the ability to save predict number of points that will fit across the graph given the fig dim and size. `predict(model, data.frame(fig.dim=figdim, size=size))`.
+
+```{r}
+load("overplotting/numberOfDistinctPointsModel.rData")
+
+.getGGVisiblePoints = function(cleanData, xbuild, layeri) {
+  figDim = dev.size()
+  #Get grid for points to be put into
+  roundedPoints = list()
+  axes = c('x', 'y')
+  for (axis in axes) {
+    data = cleanData[axis]
+    rangeName = paste0("panel_scales_", axis)
+    limits = xbuild[["layout"]][[rangeName]][[1]][["range"]][["range"]]
+    range = limits[2] - limits[1]
+    
+    avgPointSize = mean(cleanData$size)
+    
+    numberOfDistinctPoints = predict(m.figInter_sizePoly3,
+                                     data.frame(
+                                       size=avgPointSize,
+                                       figDim=figDim[which(axes == axis)]))
+    
+    #This will get the width of each cell in the grid
+    cellWidth = range / numberOfDistinctPoints
+    roundedPoints[axis] = cellWidth * round(data/cellWidth)
+  }
+  #Return number of indiviual points
+  numberOfVisiblePoints = data.frame(roundedPoints) |> distinct() |> nrow()
+  numberOfPoints = length(roundedPoints$x)
+  (numberOfVisiblePoints / numberOfPoints)
+}
+```
+
+Now that we have the new function we can test it.
+
+Going to have a look at the plots that are found early in the chapter.
+
+### Testing of solution
+
+To test we are going to have to plot lots of plots and see if they look good.
+
+```{r}
+plotTest = function(.data, .x, .y, .size, distinctOnly = FALSE, original=T) {
+  if (original) {
+    print(ggplot(.data, aes(x=.x,y=.y)) + geom_point(size = .size))
+  }
+  load("roundedPoints.rData")
+  if (distinctOnly) {
+    .data = rounded |> distinct()
+  } else {
+    .data = rounded
+  }
+  ggplot(.data, aes(x=x,y=y)) + geom_point(size=.size, alpha=0.5) + labs(title=.size)
+}
+
+plotTest(midwest, midwest$area, midwest$poptotal, 0.5, T)
+plotTest(midwest, midwest$area, midwest$poptotal, 3, T)
+plotTest(midwest, midwest$area, midwest$poptotal, 6, T)
+plotTest(midwest, midwest$area, midwest$poptotal, 10, T)
+plotTest(midwest, midwest$area, midwest$poptotal, 17.5, T)
+plotTest(midwest, midwest$area, midwest$poptotal, 25, T)
+plotTest(midwest, midwest$area, midwest$poptotal, 40, T)
+```
+After testing it here I have found that the model gotten from this code is good enough at predicting the number of visible points for sizes less than 20. 
+```
+df = overplotting #>
+  #filter(size < 20)
+
+m.figInterSize = lm(number ~ figDim * log(size)- 1, data=df)
+summary(m.figInterSize)
+plot(m.figInterSize)
+coef = m.figInterSize[["coefficients"]]
+predictionModel = paste0("function(figDim, size) ",
+                         # coef["(Intercept)"], " + ",
+                         coef["figDim"], " * figDim + ",
+                         coef["log(size)"], " * log(size) + ",
+                         coef["figDim:log(size)"], " * log(size) * figDim")
+predictionModel
+```
+
+I will add it in with clause that it only works on on sizes less than 18.
+
+## Add default symbol used in geom_point
+This will resolve #31
+
+The problem in this case is that the VI command for a geom_point layer doesnt say anything about the dots if are the default which is a closed black dot
+
+Just looking at what different geom_points say at the moment
+```{r}
+default = ggplot(cars, aes(speed, dist)) +
+  geom_point()
+default
+default_b = ggplot_build(default)
+
+triangle = ggplot(cars, aes(speed, dist)) +
+  geom_point(shape=2)
+triangle
+triangle_b = ggplot_build(triangle)
+
+cross = ggplot(cars, aes(speed, dist)) +
+  geom_point(shape=4)
+cross
+cross_b = ggplot_build(cross)
+
+vary = ggplot(storms, aes(hour, wind)) +
+  geom_point(aes(shape=status))
+vary
+vary_b = ggplot_build(vary)
+```
+
+As Sophie Banks suggested in her issue it would be quite clean to have the output explain a little bit about the default shape
+
+### Solution 1
+Well it seems that would could look into the un built object and see if it has any aes shape parameter set to anything. 
+If it doesn't then it is the default and we can go with the default situation and print out that it is the a black circle
+
+This worked quite well there was a small hiccup in making sure that it worked with varying shapes. It did this by checking the build object and how many unique numbers there are.
+
+## Themes in ggplot
+30/11/2022
+
+```{r}
+x = rnorm(100)
+y = rnorm(100, x)
+
+themed = ggplot(NULL, aes(x,y)) +
+  geom_point() +
+  theme_minimal()
+themed_b = ggplot_build(themed)
+themed
+```
+
+There a theme element in the plot object. However it is a list of all the different theme elements that could be affected.
+
+To find the theme you would need to know what the default is.
+Compare all the elements then find out what is differnet. If there is something taht is diferent see if it is one of the complete themes given by ggplot.
+
+This seems like it would be quite bulky and very fragile of any changes. There are alot of elements in the theme so will have to find another solution or look back at this later.
+
+## issue 61 Geom_boxplot
+6/12/2022
+
+Here boxplot isn't displaying any information in the VI output.
+```{r}
+x = rnorm(1e3)
+boxplot = ggplot() +
+  geom_boxplot(aes(x=x))
+boxplot_b = ggplot_build(boxplot)
+
+boxplot
+
+```
+
+Having a look at the whiskers template it seems as if this only works for vertical orientated boxplots.
+
+```{r}
+x = rnorm(1e3)
+boxplot_vert = ggplot() +
+  geom_boxplot(aes(y=x))
+boxplot_vert_b = ggplot_build(boxplot_vert)
+
+boxplot_vert
+```
+
+This does seem to be the case so we will need to find which orientation a layer is at then we can display information accordingly.
+
+This seems to have done the job.
+It now works for both vertical and horizontal boxplots.
+
+Quick few tests
+```{r}
+#This one caused a little error where i need to turn the flipped value from vector to a single boolean
+one = ggplot(mpg, aes(class, hwy)) + geom_boxplot()
+one_b = ggplot_build(one)
+one
+
+#Once again this caused a little problem with how i was turing the vector into a single boolean. As I hadnt taken into account tha sum will go above 1
+two = ggplot(mpg, aes(hwy, class)) + geom_boxplot()
+two_b = ggplot_build(two)
+two
+
+ggplot(mpg, aes(class,hwy)) + geom_boxplot(notch = TRUE)
+
+four = ggplot(mpg, aes(class, hwy)) + geom_boxplot(varwidth = TRUE)
+four_b = ggplot_build(four)
+four
+```
+
+### Adding outliers
+
+Now that I have solved the issue  I would like to give a bit more information about the outliers.
+
+We can get the neccasary information with code like this:
+
+```
+      nOutliers = sapply(cleandata$outliers,length)
+      layer$scaledata[["nooutliers"]] = nOutliers == 0
+      maxoutliers = c()
+      minoutliers = c()
+      for (box in seq_along(cleandata$outliers)) {
+        if (flipped) {
+          middle = cleandata$xmiddle
+        } else {
+          middle = cleandata$middle
+        }
+        maxoutliers[length(maxoutliers)+1] = cleandata$outliers[[box]][cleandata$outliers[[box]] >= middle] |>
+          length()
+        minoutliers[length(minoutliers)+1] = cleandata$outliers[[box]][cleandata$outliers[[box]] <= middle] |>
+          length()
+      }
+      layer$scaledata[["maxoutliers"]] = maxoutliers
+      layer$scaledata[["minoutliers"]] = minoutliers
+```
+
+Hwever it does give us a warning.
+
+it is becuase of this bit `[cleandata$outliers[[box]] <= middle]`
+
+We are comparing differnet lengths.
+
+To fix this problem we can make them the same length by using the rep funcion. `outliers < rep(middle, length(outliers))`.
+
+It was actually a problem with the setting of middle. as we werent setting it to  numberbut rather a vector.
+
+This has been resolved and it works now and looks like this
+```
+      maxoutliers = c()
+      minoutliers = c()
+      for (box in seq_along(cleandata$outliers)) {
+        outliers = cleandata$outliers[[box]]
+        if (flipped) {
+          middle = cleandata$xmiddle[box]
+        } else {
+          middle = cleandata$middle[box]
+        }
+        maxoutliers[length(maxoutliers)+1] = outliers[outliers > middle] |>
+          length()
+        minoutliers[length(minoutliers)+1] = outliers[outliers < middle] |>
+          length()
+      }
+      layer$scaledata[["maxoutliers"]] = maxoutliers
+      layer$scaledata[["minoutliers"]] = minoutliers
+```
+I ahve asked code review to see if anyone has any suggestions.
+
+But will probably end up pushing it as is.
+
+### Code review
+https://codereview.stackexchange.com/questions/281708/calculate-number-of-max-and-min-outliers-from-data-frame/281730#281730
+There was help from a code reviewere that made it all the simpler.
+
+It was important in this case to keep things as vectors as r is vectorised language.
+
+The solution given here:
+```
+      middle <- if (flipped) cleandata$xmiddle else cleandata$middle
+      minoutliers <- mapply(function(x, y) sum(x < y), cleandata$outliers, middle)
+      maxoutliers <- mapply(function(x, y) sum(x > y), cleandata$outliers, middle)
+```
+# X issue from Jonathan
+9/12/22
+
+He has stated that there is ths message in VI method 3
+> message("VI cannot process ggplot objects with flipped or non-Cartesian coordinates")
+
+It is from this bit of code found at the top of the .VIstruct.ggplot code.
+This is really the first thing to be processed.
+```
+  if (!(.getGGCoord(x, xbuild) %in% c("CoordCartesian", "CoordFixed"))) {
+    message("VI cannot process ggplot objects with flipped or non-Cartesian coordinates")
+    return(NULL)
+  }
+```
+
+The .getGGCoord looks like this
+```
+.getGGCoord = function(x, xbuild) {
+  return(class(x$coordinates)[1])
+}
+```
+
+To investigate why it is I will have to look at what the `class(x$coordinates)[1]` means in context of lots of different ggplots
+
+```{r}
+point = ggplot(mtcars, aes(mpg, disp)) +
+  geom_point()
+point
+
+point_flipped = ggplot(mtcars, aes(mpg,disp)) +
+  geom_point() + coord_flip()
+point_flipped
+```
+
+I think what we could do is change it so that rather than just checking for the first Coord class cold isntead check for all the classes.
+
+We will have to change it so that it returns the whole set of classes
+
+```{r}
+classes = class(point_flipped[["coordinates"]])
+
+options = c("CoordCartesian", "CoordFixed")
+
+sum(options %in% classes) > 0
+```
+
+This means that the plot coordinates will only need to have CoorCartesian or CoordFixed as any of its classes not just first class.
+
+I will need to implement and test it to see if it works!
+
+## Flipped coords
+
+Firstly have a look at the flipped graphs
+```{r}
+point = ggplot(mtcars, aes(mpg, disp)) +
+  geom_point()
+point
+point_b = ggplot_build(point)
+
+point_flipped = ggplot(mtcars, aes(mpg,disp)) +
+  geom_point() + coord_flip()
+point_flipped
+point_flipped_b = ggplot_build(point_flipped)
+```
+
+After having a look these two again I see that in fact hte coord flipped is a bit of a hassle and can mess thigns up a bit.
+
+How deep does it run?
+What does the boxplot VI command do
+```{r}
+boxplot = ggplot(mtcars, aes(x=mpg, y=as.factor(cyl))) +
+  geom_boxplot()
+boxplot
+boxplot_b = ggplot_build(boxplot)
+
+boxplot_flipped = ggplot(mtcars, aes(x=mpg, y=as.factor(cyl))) +
+  geom_boxplot() + coord_flip()
+boxplot_flipped
+boxplot_flipped_b = ggplot_build(boxplot_flipped)
+```
+The coord system is very sneaky and cant really be seen till after the plot is plotted.
+
+Because of this I think we can start with simply allowing the flipped coordinate to show the basic information then advise the user that everything else is flipped.
+
+## Polar
+
+First I should havea little look at what the object of the other items have
+
+```{r}
+base <- ggplot(mtcars, aes(factor(1), fill = factor(cyl))) +
+  geom_bar(width = 1) + 
+  theme(legend.position = "none") + 
+  scale_x_discrete(NULL, expand = c(0, 0)) +
+  scale_y_continuous(NULL, expand = c(0, 0))
+
+# Stacked barchart
+cart = base
+
+# Pie chart
+polar = base + coord_polar(theta = "y")
+polar_b = ggplot_build(polar)
+
+cart
+polar
+```
+### Tick labels
+
+To get the polar coordinates working the only thing is the tick larbels for the axis.
+
+I have updated the function a bit so that it is now one function with simply a different parameter for the various axis. It also has a check now for the coord to see where the labels would be found.
+
+Looks something like this:
+```
+.getGGTicks = function(x, xbuild, layer, axis) {
+  if (.getGGCoord(x, xbuild) == "CoordPolar") {
+    if (x$coordinates$theta == axis) {
+      labs = xbuild$layout$panel_params[[1]]$theta.labels
+    } else {
+      labs = xbuild$layout$panel_params[[1]]$r.labels
+    }
+  } else {
+    labs = xbuild$layout$panel_params[[1]][[axis]]$get_labels()
+  }
+  return(labs[!is.na(labs)])
+}
+```
+Here are some test graphs to see if the printout is correct.
+```{r}
+data <- data.frame(
+  group=LETTERS[1:5],
+  value=c(13,7,9,21,2)
+)
+
+# Basic piechart
+ggplot(data, aes(x="", y=value, fill=group)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)
+
+# Create Data
+data <- data.frame(
+  group=LETTERS[1:5],
+  value=c(13,7,9,21,2)
+)
+
+# Compute the position of labels
+data <- data %>% 
+  arrange(desc(group)) %>%
+  mutate(prop = value / sum(data$value) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+
+# Basic piechart
+second= ggplot(data, aes(x="", y=prop, fill=group)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + 
+  theme(legend.position="none") +
+  
+  geom_text(aes(y = ypos, label = group), color = "white", size=6) +
+  scale_fill_brewer(palette="Set1")
+second_b = ggplot_build(second)
+second + theme_minimal()
+
+df <- data.frame(value = c(10, 23, 15, 18),
+                 group = paste0("G", 1:4))
+
+ggplot(df, aes(x = "", y = value, fill = group)) +
+  geom_col(color = "black") +
+  coord_polar(theta = "y") + theme_minimal()
+```
+
+### x y label
+It seems to be doing a good job but the x and y axis names are kind of incorrect so I will try add something in that shows what you would expect.
+
+I have consolidated the getter function for the axis label so they now work off the parameter as opposed to being hard coded in.
+
+There is also a new section of functions in VIInternals to help with the various coordinate specific features.
+
+It seems to be working but I need to get it so that it will not display a axis when it really isnt displayed. Except when using theme_void.
+
+### Polar tests
+
+Now I will actually create some of my own graphs and make sure that they make sense with the output that we would expect
+
+```{r}
+ggplot(mtcars, aes(x= "", y = cyl, fill = as.factor(cyl))) +
+  geom_col() + 
+  coord_polar(theta= "y")
+```
+This simple one has an acceptable output.
+
+```{r}
+data = data.frame(
+  value  = c(14,35,76,23,76,34,56,98, 63),
+  group = rep(LETTERS[1:3], 3)
+)
+ggplot(data, aes(x= value, y = "", fill = group)) +
+  geom_col() + 
+  coord_polar()
+rm(data)
+```
+There is a problem here that it would be very hard for a blinc user to make a piechart.
+
+```{r}
+mydata <- data.frame(side1=rep(LETTERS[1:3],3,each=9),
+                     side2=rep(LETTERS[1:3],9,each=3),
+                     widget=rep(c("X","Y","Z"),9*3),
+                     val=runif(9*3),
+                     strength=rep(c(1,2,3),3,each=3))
+
+ggplot(mydata, aes(x=strength/2, y = val, fill = widget, width = strength)) +
+  geom_bar(position="fill", stat="identity") + 
+  facet_grid(side1 ~ side2) + 
+  coord_polar("y")
+```

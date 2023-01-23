@@ -1,0 +1,24 @@
+# Documentation and Learning
+
+There is a distinct problem at this moment in BrailleR (Januarary 2023). Or more so a missing bit. And that is docuemntation. Both internal and external documetnaion.
+
+## External
+Given that this software is designed to make R and Blind friendly as possible I think there should be some more effort put into making the software itslef more Blind firendly and jsut accessible in general.
+
+I think for that having a more consistant and defined learning path for using BrailleR.
+
+In this we have just deployed the pkgdown website. This seems like a good "front" for the website so that when people find out about this as rosy eyed new uni students they can have the easiest time possible learning about all the different ways in which BrailleR cna help. This will be in the form of Articles (known as vignettes in pkg dev).
+
+Theses should be clean cut and help layout how to do the various things that brailleR has to offer.
+
+6/01/2022 I am going to start writing a exploring graphs article for now which will give a up to date long form guide on what hte various functions are for and how you can use them in a workflow.
+
+IU think it is best that I do this as soon as possible and concurrently so that it is fresh in my mind. As coming back later to this would not be great.
+
+## Internal
+
+Because of the lack of external documentation it makes it very hard to understand what is going on when you look at the source code.
+
+Thus starting to contribute to it is a challenge having to learn everything about a particular area before you can really get stuck in.
+
+I bleive that once the external documenttaiotn is complete then the internal documentation will start to for natuarally.
