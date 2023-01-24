@@ -9,5 +9,4 @@ packages <- c(
 
 install.packages(packages)
 
-#installDevVersion
-devtools::install_github("1jamesthompson1/BrailleR")
+# devtools::install_github("ajrgodfrey/BrailleR")
