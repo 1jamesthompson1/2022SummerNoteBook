@@ -1353,6 +1353,8 @@ send Jonathan an email and see if he knows anyone who could help.
 I am also moving on as atleast the main lines shows. Currrently this
 works fine for blind but not low vision people.
 
+#### Looking at base r
+
 ### Cleaning up if else tree
 
 I think it will be best to start extracting some of the common features.
@@ -1522,3 +1524,837 @@ Now lastly handle a sinlge description
     })
 
 ```
+
+## Updating to new version of js code
+
+24/01/2023
+
+Had a meeting with Jonathan and Volker Sorge.
+
+First point to be discussed was that there is a new version o f the js
+code.
+
+This can be found here:
+<https://cdn.jsdelivr.net/npm/diagcess/dist/diagcess.js>
+
+The code changed in the template also included an updated document
+listener:
+
+      <script type=text/javascript src=https://cdn.jsdelivr.net/npm/diagcess/dist/diagcess.js></script>
+      <script type=text/javascript>
+            document.addEventListener("DOMContentLoaded", function() {
+              diagcess.Base.init();
+            })
+      </script>
+
+This however has changed things around enough that it seems like none of
+the already sorted ggplots work anymore.
+
+### Getting Accessible SVG workign with new JS
+
+To first lets assess the damage.
+
+We know that we had geom_point, geom_line, geom_bar and geom_smooth.
+
+Lets assess what is working
+
+#### Assesment
+
+**geom_line**
+
+```{r}
+tsplot = TimeSeriesPlot(Nile)
+tsplot
+MakeAccessibleSVG(tsplot)
+```
+
+This works from a completly blind uses perspective.
+
+It does not look right from a sighteted persepctive.
+
+It also doesnt zoom in on certain segments when they are highlighted.
+
+Looking at how Volker has written the timeseries code would be a good
+way to figure out how this could be done.
+
+**geom_bar**
+
+```{r}
+histPlot = ggplot(mtcars, aes(wt)) +
+  geom_histogram()
+histPlot
+MakeAccessibleSVG(histPlot)
+```
+
+Geom bars work alright.
+
+It doest look a bit funny however it might be easier to see for a lower
+sighted person.
+
+**geom_point**
+
+```{r}
+scatterPlot = ggplot(mtcars, aes(wt, mpg)) +
+  geom_point()
+scatterPlot
+MakeAccessibleSVG(scatterPlot)
+```
+
+The points are dispalyed!
+
+Well this is certainly a good start. The plots are now dispalyed. Will
+now need to work to get the right sections to be displayed.
+
+Also maybe the graph might change how it looks with a different theme
+being applied
+
+**geom_smooth**
+
+```{r}
+smootherPlot = ggplot(mtcars, aes(wt, mpg)) +
+  geom_smooth()
+smootherPlot
+MakeAccessibleSVG(smootherPlot)
+```
+
+This actually shows the CI as well!
+
+It all seems to be getting a bit better.
+
+There is a funny thing though that it shows a shaded area that connects
+the start and the end of the line together. This could be something to
+do with all of the funny extra components.
+
+I willstart from scratch trying to get these work with hte new verion
+and see if it does the trick.
+
+#### What needs to be done
+
+Well from here we can see that something have definitely changed.
+
+There could be some small changes that might make geom_smooth and
+geom_line work.
+
+Geom point will need to be updated so that it only shows points that are
+in the area it is covering.
+
+I think this new version of the js code will give me the chance to
+actually do this properly.
+
+### geom_line
+
+```{r}
+tsplot = TimeSeriesPlot(Nile)
+tsplot
+MakeAccessibleSVG(tsplot, cleanup = FALSE)
+```
+
+To sort this out I will start by having a look at the BaseR time series
+and see how that is done.
+
+```{r}
+tsplot.base = TimeSeriesPlot(x = Nile, base = TRUE)
+tsplot.base
+MakeAccessibleSVG(tsplot.base, cleanup = FALSE)
+```
+
+There seems to be problem with getting the base R plot to make a ts
+plot. Turns out it was a simple typo
+
+I can create the graph but it has the same probelm where there is a
+weird line from the start to finsih fdilling in some of the space.
+
+However the segments work and how the segments work is what I am
+interested in.
+
+Looking at it Volker Sorge actually did something a big different which
+was to seperate the polyline into different points. This meant that it
+will actually highlight the precise section you are looking at. I am
+going to try to implement this for ggplot.
+
+He did this by having all the split line in the children and component
+of the chart annotation.
+
+Then each annotation of the center had a active component which was the
+id of the summarized segment.
+
+#### Splitting the SVG polylines
+
+24/01/2023
+
+This is a new thing to be done on the ggplot framework.
+
+I think that doing this as part of the SVGThis would be the correct
+course of action so that there is appropriate seperation of concerns.
+
+To this I will need to take a ggplot object split it into layers and act
+on each of these layers.
+
+```{r}
+exampleGGplotOjbect = ggplot(mtcars, aes(disp, mpg)) +
+  geom_point() +
+  geom_smooth()
+
+x = exampleGGplotOjbect
+
+lapply(x$layers, function(x, graphObject, file) {
+  .ReWriteSVG(graphObject, file, x$geom)
+}, graphObject = x, file = file)
+
+```
+
+I will add in the .ReWriteSVG s3 generic method. This will have a
+special Rewrite function for each of the layers.
+
+Not all layers will require the svg to be changed but some will.
+
+In this function it will read the svg which is really just a xml query
+it a bit add some stuff and then save it.
+
+I need to figure out how to grab the right poly lie to split it up with.
+I have bypassed this for the time being so that I just focus on doing
+the actual splttign up.
+
+I now need to test this.
+
+In testing this I ahve found that for some reason I cannot get hte call
+to the add attributesfunction.
+
+I am using the do.call and passing the arguments in a list.
+
+It comes up with the error
+
+    Error in (function (classes, fdef, mtable)  : 
+      unable to find an inherited method for function ‘addAttributes’ for signature ‘"missing"’
+
+I will need to figure out what is going on with this tomorrow.
+
+So the problem faced is that there is a missing signature.
+
+I have managed to avoud this probelm but just creating the node and
+adding sttributes at the same time.
+
+#### Getting the Geom IDs in the SVG
+
+This has worked well. Now I face the problem of getting the line ID.
+
+I will create a getGeomID which can be used for both the xml and the
+SVg.
+
+This will help create a uniform point to connect these two files.
+
+just going to test it out now
+
+```{r}
+pdf(NULL)
+plot(tsplot)
+grid.force()
+
+BrailleR:::.GetGeomID(tsplot[["layers"]][[1]][["geom"]])
+
+
+```
+
+There is problem wti hthe s3 methods.
+
+I dont know why I always face this issue.
+
+I think that it might be something to do with the dot.
+
+I have written some test s3 generics ot test with they are in the pckage
+so that they get loaded the same
+
+    test <- function(x,...) UseMethod("test", x)
+
+    test.class <- function(x, ...) {
+      print("works like a charm")
+    }
+
+
+    .dottest <- function(x,...) UseMethod(".dottest", x)
+
+    .dottest.class <- function(x, ...) {
+      print("works like a charm even with a dot")
+    }
+
+```{r}
+item <- 5
+class(item) <- "class"
+class(item)
+test(item)
+.dottest(item)
+```
+
+It is working so I am not sre what is wrong with what I had previous.
+
+I might try to have a explicit smple obj with a class.
+
+```{r}
+geomLineObj <- 5
+class(geomLineObj) <- "GeomLine"
+.GetGeomID(NULL, geomLineObj)
+```
+
+This hasnt worked so i will try to change the generic so it only have
+one named parameter
+
+```{r}
+geomLineObj <- 5
+class(geomLineObj) <- "GeomLine"
+.GetGeomID(geomLineObj)
+```
+
+This also hasnt helped but the errors is different now. It only says no
+applicable method.
+
+    Error in UseMethod(".GetGeomID", x) : 
+      no applicable method for '.GetGeomID' applied to an object of class "GeomLine"
+
+Going to try with a test class
+
+```{r}
+geomLineObj <- 5
+class(geomLineObj) <- "testClass"
+BrailleR:::.GetGeomID(geomLineObj)
+```
+
+Well this is very curious.
+
+Now that I am going back even the tests are not working.
+
+I am going to try instead to run it in the package enviroment.
+
+It doesnt work so I will try to ask a question on SO
+
+```{r}
+reprex({
+  library(BrailleR)
+  item <- 5
+  class(item) <- "classtest"
+  class(item)
+  BrailleR::test(item)
+  BrailleR:::.dottest(item)
+})
+```
+
+I ahve asked the question and will see if anyone has input.
+
+Now looking at hte Reprex though there are some issues with it not even
+being about to find test.
+
+Ahhhhh not making any sense going to come back after lunch.
+
+After coming back I have seen a comment on so that points out namespace.
+
+This means that many of my tests wont of worked anyway.
+
+I have gotten it working now.
+
+The .RewriteSVG and the GetGeomID work as expected.
+
+There is a bit of manual work that has to be done for the s3 to function
+correctly but I have now been able to delete the s3 code added and it
+works fine. There were a few typos that could of been causing the
+problems.
+
+#### Highlighting right lines
+
+Now that I have the lines split as you would want I now have oto make it
+select the right part of the line. As the line is seperated into 5 bits
+this shouldn't be too hard.
+
+I have had to change the AddXMLGGplotLayer function plus the .AddXMLLine
+function.
+
+As guess getting it to highlight was relatively easy.
+
+However I dont think that summaries are actually correct.
+
+I think that I can make the whole thing alot simpler however I will need
+to look at some ofthe plot objects
+
+```{r}
+tsplot = TimeSeriesPlot(Nile)
+tsplot
+tsplot.s = .VIstruct.ggplot(tsplot)
+```
+
+This is what is looks like with lots of points
+
+Now what abuot with three points
+
+```{r}
+x <- 1:4
+y <- c(3,2,3,5)
+df <- data.frame(x, y)
+smallPlot <- ggplot(df, aes(x ,y)) +
+  geom_line()
+smallPlot
+smallPlot.s = .VIstruct.ggplot(smallPlot)
+MakeAccessibleSVG(smallPlot, cleanup = FALSE)
+```
+
+Ok so after looking at this the length of data
+
+x\$lines[[lineNum]]\$scaledata where x is a struct from vi of the plot.
+This will be the same length as the number of data points.
+
+Now that we splitting the lines in to differnt lines I think we need to
+have varying number of lines to be split.
+
+I have synced itup in a simple way.
+
+I will need to add better descriptions for these small lines.
+
+I have updated their descriptions so that they use the 2 description
+system.
+
+#### Multiple Lines
+
+##### Basic implementaion
+
+I have managed to get he svg to be created without to much of a fuss.
+
+But for some reason the webpage is completely broken. I wonder if it has
+anything to do with the fact that not all of the components are created
+with the annotations.
+
+This has been fixed without much fuss.
+
+although for the Mutliple lines there really should be not linear but
+different objects
+
+I will add this retroactively to a new header above as this will be a
+must have for a basic geom_line.
+
+##### Moving them so they aren't linear but actually next to each other.
+
+I will need to do 2 things
+
+1.  Change the rewrite of SVG to make the structure correct
+2.  Change the XML to make it have the sub structures
+
+###### SVG
+
+This will look something like this
+
+    overallPolyline g tag
+      each line g tag 
+        Segemnts which are polylines
+      another line g tag
+
+This can be considered my test code
+
+```{r}
+n <- 1e2
+multi.line = data.frame(x = 1:n, y = rnorm(n), category = rep(c("male", "female"), n/2)) |>
+  ggplot(aes(x, y, fill = category)) +
+  geom_line()
+multi.line
+MakeAccessibleSVG(multi.line, cleanup = F)
+```
+
+With slight changes to the RewriteSVG function it wasn't actually too
+hard to add it in.
+
+Now there are sub graphics for each line.
+
+###### XML
+
+This is a bit different as all the annotations are linear in indentation
+and such.
+
+    overall center annotation
+      No active component
+      children and components are all of the line group g tags.
+    each line group annotaiont
+      No active component
+      children and components are all th segments
+    segment annotaions
+      Same as before
+
+I also think that because I didn't write this it might be a bit more
+difficult.
+
+Once again this can be considered the test code
+
+```{r}
+n <- 1e2 + 12
+multi.line = data.frame(x = 1:n, y = rnorm(n), category = rep(c("male", "female"), n/2)) |>
+  ggplot(aes(x, y, colour = category)) +
+  geom_line()
+MakeAccessibleSVG(multi.line, cleanup = F)
+```
+
+I will update the strucutre as rather htan using graoups for the lines I
+will actually use passive as I tihkn that is the purpose of them.
+
+I ahve updated the xml so that it has the structure listed below
+
+    Layer annotation (group center)
+      No active component
+      parent is chart
+      children and components are all of the line passive annotations
+    each line passive annotation
+      parent is center
+      children and components are all the segments active annotations
+    segment active annotations
+      Same as before
+
+It is important that strucutrely these are all in the same element.
+
+It works to the point that you can navigate to the layer. However from
+there it doesnt let yuo go lower into each line.
+
+I have just noticed that there arent the children for the center
+annotation. I wonder if that is the problem.
+
+This is becuase in the
+
+    .AddXMLAddChildren <- function(annotation, nodes) {
+      clone <- function(x) {
+        if (XML::xmlName(x$element) != "passive") {
+          .AddXMLclone(annotation$children, x$element)
+        }
+      }
+      lapply(nodes, clone)
+    }
+
+It is testing for passive. I will try change these elements to active
+and see if that helps.\
+It doesn't them added but now the whole graph stops working.
+
+So clearly this cant be done like that.
+
+When removing the passive check it still has the same problems and has
+swtiched all of them to active.
+
+I have switched them to grouped and it wroks exaclty as expected.
+
+I think that I might of accidently written group or something before.
+
+Now I can say that multiple lines do work.
+
+I have this pesky thing though that it shades in areas it really
+shouldnt.
+
+##### Quick testing
+
+I wnat to make sure it works with the small and the lage lines
+
+Also with many lines and singular lines
+
+###### small lines
+
+This will test if the summarizing still happens as expected.
+
+```{r}
+n <- 8
+small.multi = data.frame(x = 1:n, y = rnorm(n), cat = rep(c("A", "B"), n/2)) |>
+  ggplot(aes(x, y, color = cat)) +
+  geom_line()
+MakeAccessibleSVG(small.multi)
+```
+
+Voila it works first time isnt that wonderful!
+
+###### singleline
+
+Will test if single lines works as you want
+
+```{r}
+singleLine <- TimeSeriesPlot(Nile)
+MakeAccessibleSVG(singleLine)
+```
+
+Noted that there are problems with the median number or the summarizing.
+Other than that it works as expcted. Which is that you have to go inside
+to the line.
+
+###### Lots of lines
+
+Lastly I can have a look to see if many lines will cause a problem
+
+```{r}
+n <- 1e3
+small.multi = data.frame(x = 1:n, y = rnorm(n), cat = rep(LETTERS[1:5], n/5)) |>
+  ggplot(aes(x, y, color = cat)) +
+  geom_line()
+MakeAccessibleSVG(small.multi)
+```
+
+Once again this works as we want.
+
+#### Fixing up summary output
+
+Currently it summarised the line into 5 points. From there it will give
+you the range of slopes as well as the median of slopes.
+
+I think that however something might be wrongin the calauclations.
+
+Here is an exaple to show what I am talking about
+
+```{r}
+singleLine <- TimeSeriesPlot(Nile)
+MakeAccessibleSVG(singleLine, cleanup = FALSE)
+```
+
+I think that it might be better to show the range as well as the trend
+
+This would be the last minus the first.
+
+This isnt working either I think there might just be something wrong
+with the logic of the summariseLayer function.
+
+I am going tobring it here to see if I can make sense of it
+
+```{r}
+summarisedSections <- 5
+summariseLayer <- function(data, FUN) {
+  breaks <- seq(min(data$x), max(data$x), length.out = summarisedSections + 1)
+  mins <- breaks[1:(summarisedSections)]
+  maxs <- breaks[2:(summarisedSections + 1)]
+  # As max will be the same as the last item we will increase max by 1 to include the final data point
+  maxs[summarisedSections] <- maxs[summarisedSections] + 1
+  summarisedData <- mapply(
+    function(min, max, data) {
+      data |>
+        dplyr::filter(x < max, x >= min) |>
+        FUN()
+    },
+    mins, maxs, MoreArgs = list(data = data),
+    SIMPLIFY = FALSE
+  )
+}
+
+lineData <- .VIstruct.ggplot(singleLine)$panels[[1]]$panellayers[[1]]$lines[[1]]$scaledata
+
+slope_Range_Median <- summariseLayer(lineData, function(data) {
+  print(data)
+  data |>
+    dplyr::mutate(startX = x, endX = lead(x), startY = y, endY = lead(y)) |>
+    tidyr::drop_na() |>
+    dplyr::select(matches("(start|end)\\w")) |>
+    dplyr::mutate(slope = (startY - endY) / (startX - endX)) |>
+    dplyr::summarise(min = min(slope), max = max(slope), median = median(slope)) |>
+    as.list()
+})
+
+test = lineData |>
+    dplyr::slice(1:20) |>
+    dplyr::mutate(startX = x, endX = lead(x), startY = y, endY = lead(y)) |>
+    tidyr::drop_na() |>
+    #dplyr::select(matches("(start|end)\\w")) |>
+    dplyr::mutate(slope = (startY - endY) / (startX - endX))
+
+firstSegment <- test
+firstSegment$slope |> mean()
+firstSegment$slope |> median()
+
+minsMaxs <- .GetSummarizedAmounts.default(length(lineData$x))
+minsMaxs
+```
+
+I have figured out that it is because there is a mismatch between what
+is being highliighted and what the summary is getting.
+
+Where the highlighting is of the first 20 lines the summary is only off
+the first 19.
+
+I think what would be best would be to extract this function into a
+function that can be used by the rewrite as well as the ad xml.
+
+This would be so that given a length andn umber of desired breaks it
+would give you the breaks maxs and mins of the data.
+
+I have done this and it is still not working.
+
+It seesm to be that un the current code that there is one extra line in
+the polyline that shouldnt be there.
+
+I ahve changed it now so that it should work I have changed the filter
+to a slice which is much cleaner and I think has fixed my problem. I
+have also changed the description to have a mean instead of median. This
+is becuase with such a small amount of lines in each segment (most
+likely) it is probably best to have a description of mean rather than
+median. It also means that you can just go mean \* number of lines to
+get total height difference.
+
+#### Removing shaded area
+
+I dont think I can call this woring yet until I have removed all of the
+shaded areas.
+
+##### What is the problem?!?!
+
+Firstly I need tofind why this happens.
+
+There is a difference between summarized data and small ines without
+summarized data.
+
+I am going to start by looking at the svg and xml files and comparing
+them to see if I can seea difference.
+
+Hopefully I can and this propblem will be solved!
+
+I will also manually beatify the svgs.
+
+###### SVG
+
+From what I can tell there is nothing different in the structure nor the
+attirbutues.
+
+I will now have a look at the XML
+
+###### XML
+
+Looking at the xml they are the same
+
+##### More than two poitns in a polyline
+
+I have an idea that it is becuase there are more than 2 points.
+
+This means that that js is treating it like a polygon and filling in the
+arae.
+
+I can combat this by mak,ing the fill opacity = 0
+
+I think that this will solve the problem
+
+#### Solution
+
+I can make the fill-opacity 0 this means that even if it is filling in
+the area it wont be seen by anyone.
+
+I have added one line which sets the fill-opacity to 0. This has fixed
+the problem.
+
+It almost feels too easy.
+
+#### Testing
+
+Now I will test to see what works
+
+I konw a few things will not work at the moment
+
+-   Multiple layers
+
+-   ~~Multiple Lines~~ Support has been added
+
+-   Problem of shading the area
+
+    It only happens when it is the larger lines that get split.
+
+    To solve this I will have a look at the base plots
+
+    ```{r}
+    tsplot.base = TimeSeriesPlot(x = Nile, base = TRUE)
+    MakeAccessibleSVG(tsplot.base, cleanup =  FALSE)
+    ```
+
+    This werid shading things happens as well with the base plot so
+    Iwill put this on the backburners.
+
+Hopefully I don't have to add anything more to this list.
+
+##### Simple ts style plot
+
+This is the same one that I have been using throughout development
+
+```{r}
+tsplot = TimeSeriesPlot(Nile)
+MakeAccessibleSVG(tsplot, cleanup = FALSE)
+```
+
+There is still the ongoing problem of the fact that it shades in an area
+it really shouldn't.
+
+```{r}
+n <- 500
+plot.500 = data.frame(x = 1:n, y = runif(n)) |>
+  ggplot(aes(x,y)) +
+  geom_line()
+MakeAccessibleSVG(plot.500, cleanup = FALSE)
+```
+
+##### line shorter than 5
+
+```{r}
+plot.4 = data.frame(x = 1:4, y = runif(4)) |>
+  ggplot(aes(x,y)) +
+  geom_line()
+MakeAccessibleSVG(plot.4, cleanup = FALSE)
+```
+
+This works exactly as you want without shading issues
+
+```{r}
+plot.3 = data.frame(x = 1:3, y = runif(3)) |>
+  ggplot(aes(x,y)) +
+  geom_line()
+MakeAccessibleSVG(plot.3, cleanup = FALSE)
+```
+
+```{r}
+plot.2 = data.frame(x = 1:2, y = runif(2)) |>
+  ggplot(aes(x,y)) +
+  geom_line()
+MakeAccessibleSVG(plot.2, cleanup = FALSE)
+```
+
+##### Multiple lines
+
+Even though it doesnt work I would like to try
+
+```{r}
+n <- 100
+multi.line = data.frame(x = 1:100, y = rnorm(n), cat = rep(c('male', 'female'), n/2)) |>
+  ggplot(aes(x, y, fill = cat)) +
+  geom_line()
+struct = .VIstruct.ggplot(multi.line)
+
+MakeAccessibleSVG(multi.line, cleanup = FALSE)
+```
+
+I think that it actually wouldn't be too hard to do.
+
+I have managed to get he svg to be created without to much of a fuss.
+
+But for some reason the webpage is completely broken. I wonder if it has
+anything to do with the fact that not all of the components are created
+with the annotations.
+
+This has been fixed without much fuss.
+
+although for the Mutliple lines there really should be not linear but
+different objects
+
+I will add this retroactively to a new header above as this will be a
+must have for a basic geom_line.
+
+After sorting this out in testing I think that it might be best to hide
+the other line when you are lookng at one in partiuclar. But that can be
+forgottenabout for the time being.
+
+#### Summary
+
+26/01/2023
+
+It is all working.
+
+I think I have done it in a way that is smart and will give the
+transition to multiuple layers a possibility.
+
+Once I ahve done that then mutliple panels but I would call that ot of
+the scope of thsi summer reasearch.
+
+I will merge this branch back in with a squash command which will be
+fun.
+
+But before I will do that I really should do a cmd cehck
+
+This will help make sure that I am working with usable code
+
+### geom_point
+
+### geom_smooth
