@@ -1386,13 +1386,135 @@ variousLayers |>
 
 This works as you would expect.
 
-I have also just realised why the goem_points are being highlighted.
-This is the same as with the Ci for the goem_smooth. IT is becuase only stroke is affected and geom_points are all fill? Ok I forogt about the use tag. i gave it a little bit of a try but it still didnt work. Maybe instead you could have the use tag as the one with the ID rather than  separate parent g tag.
+I have also just realized why the goem_points are being highlighted.
+This is the same as with the Ci for the goem_smooth. IT is because only stroke is affected and geom_points are all fill? Ok I forgot about the use tag. i gave it a little bit of a try but it still didnt work. Maybe instead you could have the use tag as the one with the ID rather than  separate parent g tag.
 
 #### NA ins multi layes
-As descovred right at the end of the geom_bar seciton there is a problem where the goem_lin doesnt work where there are NA values and multiple layers.
+__Correction__
+This actually even when there is only one layer. There was just a problem with my tests not actually being the same.
 
-I have made the svg so that it splits each lines sections into more sections. This means that you will be able ot click through the disjoint line. I need to add the xml to back this up.
+As discovered right at the end of the geom_bar section there is a problem where the goem_line doesn't work where there are NA values and multiple layers.
+
+I have made the svg so that it splits each lines sections into more sections. This means that you will be able to click through the disjoint line. I need to add the xml to back this up.
+
+With the XML some thought has to be put into how to convery the disjointed information.
+
+When going through each line I will have a look at its scale data. I can get the disjointed nature of it by looking at how many sequential non na data points there are.
+
+This is because there is only plotting when you have atleast two sequntial data points that are not na.
+
+This below will be my test code so I can get it working.
+
+I am trying to get it so that when you zoom in one each line if it is normal line it is exactly the same.
+However if it disjoint then you can cycle through the different line sections.
+
+This means that each line will needs its own g tag.
+THen then for hte disjoint lines there will be sub g tags that hold each of the polylines for that disjoint line
+
+```{r}
+line.na = ggplot(starwars, aes(height, mass)) +
+  geom_point() +
+  geom_line(aes(color = gender))
+
+line.na |>
+  MakeAccessibleSVG(cleanup = FALSE)
+```
+
+I need to find a way to turn this scaledata df into a list with the datapoints for the various disjoint lines.
+##### Convert scale data to list
+
+I am going to ask on SO to see if anyone has ideas
+
+Exmaple
+```{r}
+reprex::reprex(structure(list(x = c(96, 150, 150, 157, 163, 165, 165, 165, 166, 
+    167, 168, 170, 178, 178, 184, 213), y = c(NA, 49, NA, NA, 
+    NA, 75, NA, 45, 50, NA, 55, 56.2, 55, 57, 50, NA)), class = "data.frame", 
+    row.names = c(NA, -16L)) |>
+          dplyr::mutate(row_id = dplyr::row_number()) |>
+          tidyr::drop_na(y) |>
+          dplyr::filter(row_id == dplyr::lead(row_id) - 1 | row_id == dplyr::lag(row_id) +1))
+```
+what i want:
+```{r}
+reprex::reprex(list(
+  data.frame(x = c(165, 166), y = c(45, 50)),
+  data.frame(
+       x = c(168, 170, 178, 178, 184),
+       y= c(55, 56.2, 55, 57, 50))))
+```
+
+I ahve gotten a few answers is quite quick time which is cool
+
+Here is an answer from Salar
+https://stackoverflow.com/a/75379929/13273710
+```{r}
+list.test <- lineData %>% 
+  group_by(group = cumsum(is.na(y))) %>%
+  filter(!(is.na(y) & n() > 1)) %>% 
+  split(.$group) %>% 
+  keep(~nrow(.) >= 2)
+```
+
+I wnat to change it to use the base pipe operator though.
+
+```{r}
+test  = lineData |> 
+  # Group by consecutive NAs in the y column
+  group_by(group = cumsum(is.na(y))) |>
+  # Remove groups that have more than one NA
+  filter(!(is.na(y) & n() > 1)) |> 
+  # Split the data frame into a list of data frames based on the groups
+  group_split() |>
+  # Remove elements with fewer than 2 rows
+  Filter(function(x) nrow(x) >= 2, x = _)
+```
+
+##### Problem with summaries
+
+There seems to be a problem when it comes to summarising multiple polylines in the disjoint lines sub segements.
+
+```{r}
+.SplitData(seq_along(lineData$x), overlapping = TRUE) |>
+    lapply(function(indexs) {
+        lineData |>
+            dplyr::slice(indexs) |>
+            drop_na(x, y) |>
+            distinct() |>
+            dplyr::mutate(startX = x, endX = lead(x), startY = y, endY = lead(y)) |>
+            tidyr::drop_na() |>
+            dplyr::select(matches("(start|end)\\w")) |>
+            dplyr::mutate(slope = (startY - endY) / (startX - endX)) |>
+            dplyr::summarise(min = min(slope), max = max(slope), mean = mean(slope)) |>
+            as.list()
+    })
+```
+
+##### Testing
+
+I think I have gotten it working.
+
+There is some refactoring to be done as it is quite ugly at the moment.
+
+This is beucase the logic is repeated twice when it really only needs to be done once.
+
+But also testing need sto happen at the smae time 
+
+**Simple line**
+
+
+I am using the simple test from the original goem_line.
+
+There seems to be a problem where the line data is having sequential x values of the same
+
+I have done this by adding in a distinct call to the summariseLayer function
+
+**Disjoint line**
+
+This I have done with the dev exmaple using the starwars data.
+
+It seems to all be good.
+But I have found a problem where the points have annotations with NAs
 
 ### Geom_Smooth
 From here on out will have a test driven approach.
@@ -1457,6 +1579,18 @@ variousLayers |>
 
 I think that this passes the test we have given it and I can move on to geom_point
 
+**NAs**
+
+```{r}
+smoothNA = ggplot(starwars, aes(height, mass)) +
+  geom_smooth()
+smoothNA |>
+  MakeAccessibleSVG(cleanup = FALSE)
+```
+There was a small point discovred here that prevented the proper highlighting of the individual ci or line when you are all the way zoomed in. This was easy to fix and was a simple spelling error.
+
+As everything here is done with the summarised information there is no need to worry about NA values.
+
 ### Geom_Point
 
 Same as before I will do a test driven approach
@@ -1497,6 +1631,12 @@ variousLayers |>
 This also works exactly as you want it too!
 
 I think I am well on track to make it all work before the end of the day. Just  got to have geom_bar working. This next one might take a little bit more code changes given that this one took exactly nill. Zilch!
+
+**NAs**
+
+There are some problems where the addXML internal does not handle the NAs before the inputting of the annotations for individual points. The summaries are alright because it removes the NAs but for the individual points it just loops through them trying to add them in. Before this happens though the NAs needs to be dropped from the data.
+
+I have fixed it by lining up the data so that there is only one reference. I should probably go and test to see if it works with geom_smooth as well.
 
 ### Geom_Bar
 For this one I follow the same pattern but might have to do a bit more work to get it to follow the same structure ast he rest of the geoms. This is because I didnt actually code this one myself and haven't really touched it at all since starting with SVG.
@@ -1582,8 +1722,8 @@ Work need to be done to support na values.
 
 What does a normal line look like
 ```{r}
-singleLine = ggplot(starwars, aes(mass, height)) +
-  geom_line()
+singleLine = ggplot(starwars, aes(height, mass)) +
+  geom_line(aes(color = gender))
 
 singleLine
 
@@ -1598,3 +1738,56 @@ Actually have a bit more of a look it seems to be unique to multi layer plots.
 As i think it is when the scales are defined or something like that. I think the best thing for me to do is change the ids and treat these are just different lines.
 
 I am going to comment on this back in the geom_line multi-line section
+
+**NAs**
+
+Some effort should also be put in to make sure that that the NAs work with geom bar.
+
+```{r}
+bar.NA <- ggplot(starwars, aes(mass)) +
+  geom_bar()
+
+bar.NA |>
+  MakeAccessibleSVG()
+
+```
+
+This seems to work as well. I might be able to call the basic support done.
+
+I think that it is probably nearing completion and I might just have to do some of that refactoring.
+
+In this refacotring process I will have to be careful not to have any regression so coming back to these tests or others will be important.
+
+### Descriptions in the SVG
+The descriptions have been added to the SVG. However they seem to not work correctly for multiple layers.
+
+```{r}
+multiLayer.desc <- ggplot(mtcars, aes(mpg, wt)) +
+  geom_point() +
+  geom_smooth()
+
+multiLayer.desc |>
+  MakeAccessibleSVG()
+```
+
+Luckily there is just a smalle type that causes this to not work.
+
+I fixed it and it seems to be working alright now.
+
+The display isnt very pleasing but from a blind persons persepctive or even low vision it might be good.
+
+I will do some more tests though partiucalr with NA just to be sure
+
+```{r}
+manylayer <- ggplot(starwars, aes(height, mass)) +
+  geom_line() +
+  geom_smooth() +
+  geom_point()
+
+manylayer |>
+  MakeAccessibleSVG()
+```
+
+It really does seem to be working.
+
+So I think I am really left just with refactoring.
